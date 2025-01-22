@@ -88,7 +88,6 @@ FCI_densities = []
 FCI_energies = []
 E_HF_list = []
 E_tot = []
-E_tot_2 = []
 
 Distance=[0.4,0.5,0.6,0.7,0.8,0.9,1.0,1.2,1.5,2.0,2.5,3.0]
 for R in Distance:
@@ -143,7 +142,6 @@ for R in Distance:
 
     # Now compute the energy:
     sum_site_energy = 0
-    sum_site_energy_2 = 0
     for impurity_index in range(N_mo):
         # permutation is done on the Hamiltonian, that's all
         h_permuted = lpfet.switch_sites_matrix(h_OAO_vKS, impurity_index)
@@ -165,37 +163,38 @@ for R in Distance:
         H_cl = tools.build_hamiltonian_quantum_chemistry( h_cl_core, g_cl_core, basis_cl, a_dag_a_cl )
         E_cl, Psi_cl = scipy.linalg.eigh(H_cl.A)
         RDM1_cl_free, RDM2_cl_free = tools.build_1rdm_and_2rdm_spin_free( Psi_cl[:,0], a_dag_a_cl )
-        E_fragment = np.einsum('q,q', (h_cl_core[0,:]), RDM1_cl_free[0,:])+(1./2)*np.einsum('qrs,qrs', g_cl_core[0,:,:,:], RDM2_cl_free[0,:,:,:])
-        E_fragment_2 = 0.5*np.einsum('q,q', (h_OAO_permuted[0,:N_mo_cl] + h_cl_core[0,:]), RDM1_cl_free[0,:])+(1./2)*np.einsum('qrs,qrs', g_cl_core[0,:,:,:], RDM2_cl_free[0,:,:,:])
+        # Formula from Wafa, doesn't work:
+        #E_fragment = np.einsum('q,q', (h_cl_core[0,:]), RDM1_cl_free[0,:])+(1./2)*np.einsum('qrs,qrs', g_cl_core[0,:,:,:], RDM2_cl_free[0,:,:,:])
+        # According to Eq. 28 of Wouters2016's paper
+        E_fragment = 0.5*np.einsum('q,q', (h_Ht[0,:N_mo_cl] + h_cl_core[0,:]), RDM1_cl_free[0,:])+(1./2)*np.einsum('qrs,qrs', g_Ht[0,:N_mo_cl,:N_mo_cl,:N_mo_cl], RDM2_cl_free[0,:,:,:])
+        # Using g_cl_core instead of g_Ht gives the same result:
+        #E_fragment = 0.5*np.einsum('q,q', (h_Ht[0,:N_mo_cl] + h_cl_core[0,:]), RDM1_cl_free[0,:])+(1./2)*np.einsum('qrs,qrs', g_cl_core[0,:,:,:], RDM2_cl_free[0,:,:,:])
         sum_site_energy += E_fragment
-        sum_site_energy_2 += E_fragment_2
     E_tot.append(sum_site_energy + E_nuc)
-    E_tot_2.append(sum_site_energy_2 + E_nuc)
 
 #####################################################
 #                    PLOTS                          #
 #####################################################
-for i in range(len(Distance)):
-    plt.figure(figsize=(8, 6))
-
-    plt.plot(range(N_mo), FCI_densities[i], ls="--", label="FCI", color='black', marker='o')
-    plt.plot(range(N_mo), converged_densities[i], ls="-.", label="Cluster", color='r', marker='x')
-    plt.plot(range(N_mo), converged_densities_KS[i], ls=":", label="KS", color='b', marker='+')
-
-    plt.title("Interatomic distance of R = {}".format(Distance[i]))
-    plt.xlabel("Hydrogen", fontsize=17)
-    plt.ylabel("Orbital occupation", fontsize=17)
-    plt.grid(True)
-
-    plt.legend()
-    plt.xticks(fontsize=17)
-    plt.yticks(fontsize=17)
-    plt.gca().yaxis.set_major_formatter(ticker.FormatStrFormatter('%.5f'))
-    plt.show()
+#for i in range(len(Distance)):
+#    plt.figure(figsize=(8, 6))
+#
+#    plt.plot(range(N_mo), FCI_densities[i], ls="--", label="FCI", color='black', marker='o')
+#    plt.plot(range(N_mo), converged_densities[i], ls="-.", label="Cluster", color='r', marker='x')
+#    plt.plot(range(N_mo), converged_densities_KS[i], ls=":", label="KS", color='b', marker='+')
+#
+#    plt.title("Interatomic distance of R = {}".format(Distance[i]))
+#    plt.xlabel("Hydrogen", fontsize=17)
+#    plt.ylabel("Orbital occupation", fontsize=17)
+#    plt.grid(True)
+#
+#    plt.legend()
+#    plt.xticks(fontsize=17)
+#    plt.yticks(fontsize=17)
+#    plt.gca().yaxis.set_major_formatter(ticker.FormatStrFormatter('%.5f'))
+#    plt.show()
 
 plt.plot(Distance, FCI_energies, label="FCI",color='black', linestyle='-', marker='o')
 plt.plot(Distance, E_tot, label="Embedding Energy",color='dodgerblue', linestyle='--', marker='s')
-plt.plot(Distance, E_tot_2, label="Embedding Energy v2",color='orange', linestyle='--', marker='x')
 plt.xlabel('Distance [angstrom]', fontsize=17)
 plt.ylabel('Energy [hartree]', fontsize=17)
 plt.grid(True)
