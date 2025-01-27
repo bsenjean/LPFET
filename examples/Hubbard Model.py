@@ -8,3 +8,194 @@ import matplotlib.ticker as ticker
 import quantnbody as qnb
 import quantnbody.fermionic.tools as tools
 import lpfet
+
+
+plt.rc('font',  family='serif') 
+plt.rc('font',  size='14') 
+plt.rc('xtick', labelsize='x-large')
+plt.rc('ytick', labelsize='x-large') 
+plt.rc('lines', linewidth='2')
+plt.rcParams.update({ "text.usetex": True})
+
+
+def norm_density(params):
+    """
+    Cost function used in LPFET (cluster occupation = KS occupation).
+    Adapted to the symmetry of a linear Hydrogen chain, i.e. left part = right part of the molecule.
+    """
+
+    global occ_cluster
+    global occ_KS
+
+    # Use symmetry for the KS potential (depends on the system!)
+    v_KS = np.zeros((len(params)))
+    for i in range(len(params)):
+        v_KS[i] = params[i]
+        v_KS[-1] = params[-1]
+
+
+    v_hxc = v_KS - v_ext_array
+
+    h_KS = lpfet.h_matrix(N_mo, N_el, t, v_KS, configuration="ring") 
+    sum_site_energy = 0
+    for impurity_index in range(N_mo):
+        # permutation is done on the Hamiltonian, that's all
+        h_KS_permuted = lpfet.switch_sites_matrix(h_KS, impurity_index)
+        epsil, C = scipy.linalg.eigh(h_KS_permuted)
+        RDM_KS = C[:, :N_occ] @ C[:, :N_occ].T 
+        # Get the householder orbitals:
+        # The orbitals are sorted as 1) cluster 2) occupied environment 3) virtual environment
+
+        # Householder transformation 
+        P, v = tools.householder_transformation(RDM_KS)
+        RDM_KS_HH = P @ RDM_KS @ P
+        
+        # Diagonalize the environment matrix
+        n_core, Q = eigh(RDM_KS_HH[N_mo_cl:, N_mo_cl:].copy())
+        Q = direct_sum(np.eye(N_mo_cl), Q)
+        
+        # The one we need to build the cluster operator 
+        P_mod = P @ Q
+        
+        # Building the U 
+        U_HH = lpfet.u_matrix(N_mo, U, delocalized_rep=True, orb_coeffs=P_mod)
+        U_cl = U_HH[:N_mo_cl, :N_mo_cl, :N_mo_cl, :N_mo_cl].copy()
+        
+        # Building the one-ele Hamiltonian with core contribution 
+        core_energy, h_cl_core, U_cl_core = tools.fh_get_active_space_integrals((P_mod.T) @ h_KS_permuted @ P_mod, U_HH, frozen_indices=[4,5], active_indices=[0,1])
+        h_cl_core = h_cl_core - np.diag([v_hxc[impurity_index], 0])
+
+        # Build the Hamiltonian of the cluster using the active space and frozen-core orbitals
+        H_cl = tools.build_hamiltonian_quantum_chemistry( h_cl_core, U_cl_core, basis_cl, a_dag_a_cl )
+        # Solve the Hamiltonian
+        E_cl, Psi_cl = scipy.linalg.eigh(H_cl.A)
+        # Extract the 1RDM of the ground state and the occupation of the impurity site
+        RDM1_cl = tools.build_1rdm_alpha(Psi_cl[:,0], a_dag_a_cl)
+        occ_cluster[impurity_index] = RDM1_cl[0,0]
+        occ_KS[impurity_index] = RDM_KS_HH[0,0]
+
+    # impose the last site occupation to match the number of electrons
+    penalty = np.abs(occ_cluster[N_mo-1] - (N_el//2 - sum(occ_cluster[:N_mo-1])))
+    occ_cluster[N_mo-1] = N_el//2 - sum(occ_cluster[:N_mo-1])
+    dens_diff_list = occ_cluster - occ_KS
+    Dens_diff = np.linalg.norm(dens_diff_list) + penalty
+
+    return Dens_diff 
+
+# Operators for the full system
+t=[1,1,1,1,1,1]
+v_ext=1
+v_ext_array=[-v_ext,2*v_ext,-2*v_ext,3*v_ext,-3*v_ext,v_ext]
+N_mo = 6
+N_el = 6
+N_occ = N_el//2 
+basis = tools.build_nbody_basis(N_mo,N_el)
+a_dag_a = tools.build_operator_a_dagger_a(basis)
+
+# Operators for the embedding cluster
+N_mo_cl = 2
+N_el_cl = 2
+basis_cl = tools.build_nbody_basis(N_mo_cl,N_el_cl)
+a_dag_a_cl= tools.build_operator_a_dagger_a(basis_cl)
+
+
+# setting initial parameters 
+options_optimizer = {"maxiter": 2000, "ftol": 1e-6} 
+initial_guess = np.zeros(N_mo)
+
+# Lists to store results
+converged_densities = [] 
+converged_densities_KS = [] 
+FCI_densities = []
+FCI_energies = []
+E_HF_list = []
+E_tot = []
+
+
+U_list=np.linspace(0,15,15)
+
+for it, U in enumerate(U_list):
+
+    h =lpfet.h_matrix(N_mo, N_el, t, v_ext_array, configuration="ring")
+    U_operator=lpfet.u_matrix(N_mo,U)
+    H_ref=tools.build_hamiltonian_fermi_hubbard(h,U_operator,basis,a_dag_a)
+    # Solve the FCI problem using eigsh (sparse eigenvalue solver)
+    E_FCI, Psi_FCI = scipy.sparse.linalg.eigsh(H_ref, which="SA", k=6)
+    # Calculate the 1-RDM for the alpha spin
+    RDM_FCI = tools.build_1rdm_alpha(Psi_FCI[:,0], a_dag_a)
+    # Collect the diagonal elements of the 1-RDM (FCI density)
+    FCI_density = []
+    for i in range(N_mo):
+        FCI_density.append(RDM_FCI[i, i])
+    FCI_densities.append(FCI_density)
+    FCI_energies.append(E_FCI[0])
+
+    # Initialization
+    occ_cluster = np.zeros(N_mo)
+    occ_KS = np.zeros(N_mo)
+
+
+  
+
+    print(f"\nStarting optimization for U = {U}") 
+    Optimized = scipy.optimize.minimize(norm_density, x0=initial_guess, method='L-BFGS-B', options=options_optimizer) 
+    print(Optimized)
+    v_KS = np.zeros((len(Optimized.x)))
+    for i in range(len(Optimized.x)):
+        v_KS[i] = Optimized.x[i]
+        v_KS[-1] = Optimized.x[-1]
+        
+    v_hxc = v_KS - v_ext_array
+    # Store results after optimization 
+    converged_densities.append(occ_cluster) 
+    converged_densities_KS.append(occ_KS) 
+    print("\nOptimization completed.")
+    print("Final converged density:", occ_cluster)
+    print("Final converged KS density:", occ_KS)
+    print("FCI density:",FCI_density)
+    print("Final KS potentials:", v_KS)
+ 
+    h_KS = lpfet.h_matrix(N_mo, N_el, t, v_KS, configuration="ring") 
+
+    # Now compute the energy:
+    sum_site_energy = 0
+    for impurity_index in range(N_mo):
+        # permutation is done on the Hamiltonian, that's all
+        h_KS_permuted = lpfet.switch_sites_matrix(h_KS, impurity_index)
+
+        epsil,C=eigh(h_KS_permuted)
+        RDM_KS= (C[:,:N_occ])@(C[:,:N_occ].T)
+        
+        #now the HH transformation 
+        P,v=tools.householder_transformation(RDM_KS)
+        RDM_KS_HH=P@RDM_KS@P
+        
+        #diagonalizing the enviroment  matrix
+        n_core,Q=eigh(RDM_KS_HH[N_mo_cl:,N_mo_cl:].copy())
+        Q= direct_sum(np.eye(N_mo_cl),Q)
+        
+        # the one we need to build the cluster operator 
+        P_mod=P@Q
+            
+        #Building the U 
+        U_HH=lpfet.u_matrix(N_mo,U,delocalized_rep=True,orb_coeffs=P_mod)
+        U_cl=U_HH[:N_mo_cl,:N_mo_cl,:N_mo_cl,:N_mo_cl].copy()
+        
+        #Building the one-ele Hamiltionien with core contribution 
+        core_energy, h_cl_core,U_cl_core=tools.fh_get_active_space_integrals((P_mod.T)@h_KS_permuted@P_mod,U_HH,frozen_indices=[4,5],active_indices=[0,1])
+        h_cl_core=h_cl_core-np.diag([v_hxc[impurity_index],0])
+            
+        #building the cluster many-electron Hamiltonien 
+        H_cl=tools.build_hamiltonian_fermi_hubbard(h_cl_core,U_cl_core,basis_cl,a_dag_a_cl)
+        
+        #Solve the many-electron Hamiltonien 
+        E_cl,Psi_cl= eigh(H_cl.A)
+        RDM1_cl_free, RDM2_cl_free = tools.build_1rdm_and_2rdm_spin_free( Psi_cl[:,0], a_dag_a_cl )
+        # Formula from Wafa, doesn't work:
+        #E_fragment = np.einsum('q,q', (h_cl_core[0,:]), RDM1_cl_free[0,:])+(1./2)*np.einsum('qrs,qrs', g_cl_core[0,:,:,:], RDM2_cl_free[0,:,:,:])
+        # According to Eq. 28 of Wouters2016's paper
+        E_fragment = np.einsum('q,q', (h_cl_core[0,:]), RDM1_cl_free[0,:])+(1./2)*np.einsum('qrs,qrs', U_cl_core[0,:,:,:], RDM2_cl_free[0,:,:,:])
+        # Using g_cl_core instead of g_Ht gives the same result:
+        #E_fragment = 0.5*np.einsum('q,q', (h_Ht[0,:N_mo_cl] + h_cl_core[0,:]), RDM1_cl_free[0,:])+(1./2)*np.einsum('qrs,qrs', g_cl_core[0,:,:,:], RDM2_cl_free[0,:,:,:])
+        sum_site_energy += E_fragment
+    E_tot.append(sum_site_energy)
