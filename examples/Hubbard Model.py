@@ -10,13 +10,6 @@ import quantnbody.fermionic.tools as tools
 import lpfet
 
 
-plt.rc('font',  family='serif') 
-plt.rc('font',  size='14') 
-plt.rc('xtick', labelsize='x-large')
-plt.rc('ytick', labelsize='x-large') 
-plt.rc('lines', linewidth='2')
-plt.rcParams.update({ "text.usetex": True})
-
 
 def norm_density(params):
     """
@@ -204,6 +197,8 @@ for it, U in enumerate(U_list):
 #####################################################
 #                    PLOTS                          #
 #####################################################
+
+
 #for i in range(len(Distance)):
 #    plt.figure(figsize=(8, 6))
 #
@@ -223,6 +218,12 @@ for it, U in enumerate(U_list):
 #    plt.show()
 
 
+plt.rc('font',  family='serif') 
+plt.rc('font',  size='14') 
+plt.rc('xtick', labelsize='x-large')
+plt.rc('ytick', labelsize='x-large') 
+plt.rc('lines', linewidth='2')
+plt.rcParams.update({ "text.usetex": True})
 
 plt.plot(U_list, FCI_energies, label="FCI",color='black', linestyle='-', marker='o')
 plt.plot(U_list, E_tot, label="Embedding Energy",color='dodgerblue', linestyle='--', marker='s')
