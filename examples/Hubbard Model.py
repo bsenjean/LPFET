@@ -1,15 +1,12 @@
 import numpy as np 
 import os
 import sys 
-import psi4
 import scipy 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import quantnbody as qnb
 import quantnbody.fermionic.tools as tools
 import lpfet
-
-
 
 def norm_density(params):
     """
@@ -44,8 +41,8 @@ def norm_density(params):
         RDM_KS_HH = P @ RDM_KS @ P
         
         # Diagonalize the environment matrix
-        n_core, Q = eigh(RDM_KS_HH[N_mo_cl:, N_mo_cl:].copy())
-        Q = direct_sum(np.eye(N_mo_cl), Q)
+        n_core, Q = scipy.linalg.eigh(RDM_KS_HH[N_mo_cl:, N_mo_cl:].copy())
+        Q = lpfet.direct_sum(np.eye(N_mo_cl), Q)
         
         # The one we need to build the cluster operator 
         P_mod = P @ Q
@@ -61,7 +58,7 @@ def norm_density(params):
         # Build the Hamiltonian of the cluster using the active space and frozen-core orbitals
         H_cl = tools.build_hamiltonian_quantum_chemistry( h_cl_core, U_cl_core, basis_cl, a_dag_a_cl )
         # Solve the Hamiltonian
-        E_cl, Psi_cl = scipy.linalg.eigh(H_cl.A)
+        E_cl, Psi_cl = scipy.linalg.eigh(H_cl.toarray())
         # Extract the 1RDM of the ground state and the occupation of the impurity site
         RDM1_cl = tools.build_1rdm_alpha(Psi_cl[:,0], a_dag_a_cl)
         occ_cluster[impurity_index] = RDM1_cl[0,0]
@@ -97,7 +94,8 @@ initial_guess = np.zeros(N_mo)
 t=[1,1,1,1,1,1]
 v_ext=1
 v_ext_array=[-v_ext,2*v_ext,-2*v_ext,3*v_ext,-3*v_ext,v_ext]
-U_list=np.linspace(0,15,15)
+#U_list=np.linspace(0,15,15)
+U_list=[9.0]
 
 # Lists to store results
 converged_densities = [] 
@@ -106,9 +104,6 @@ FCI_densities = []
 FCI_energies = []
 E_HF_list = []
 E_tot = []
-
-
-
 
 for it, U in enumerate(U_list):
 
@@ -159,7 +154,7 @@ for it, U in enumerate(U_list):
         # permutation is done on the Hamiltonian, that's all
         h_KS_permuted = lpfet.switch_sites_matrix(h_KS, impurity_index)
 
-        epsil,C=eigh(h_KS_permuted)
+        epsil,C=scipy.linalg.eigh(h_KS_permuted)
         RDM_KS= (C[:,:N_occ])@(C[:,:N_occ].T)
         
         #now the HH transformation 
@@ -167,8 +162,8 @@ for it, U in enumerate(U_list):
         RDM_KS_HH=P@RDM_KS@P
         
         #diagonalizing the enviroment  matrix
-        n_core,Q=eigh(RDM_KS_HH[N_mo_cl:,N_mo_cl:].copy())
-        Q= direct_sum(np.eye(N_mo_cl),Q)
+        n_core,Q=scipy.linalg.eigh(RDM_KS_HH[N_mo_cl:,N_mo_cl:].copy())
+        Q= lpfet.direct_sum(np.eye(N_mo_cl),Q)
         
         # the one we need to build the cluster operator 
         P_mod=P@Q
@@ -185,7 +180,7 @@ for it, U in enumerate(U_list):
         H_cl=tools.build_hamiltonian_fermi_hubbard(h_cl_core,U_cl_core,basis_cl,a_dag_a_cl)
         
         #Solve the many-electron Hamiltonien 
-        E_cl,Psi_cl= eigh(H_cl.A)
+        E_cl,Psi_cl= scipy.linalg.eigh(H_cl.toarray())
         RDM1_cl_free, RDM2_cl_free = tools.build_1rdm_and_2rdm_spin_free( Psi_cl[:,0], a_dag_a_cl )
 
         E_fragment = np.einsum('q,q', (h_cl_core[0,:]), RDM1_cl_free[0,:])+(1./2)*np.einsum('qrs,qrs', U_cl_core[0,:,:,:], RDM2_cl_free[0,:,:,:])
@@ -199,23 +194,23 @@ for it, U in enumerate(U_list):
 #####################################################
 
 
-#for i in range(len(Distance)):
-#    plt.figure(figsize=(8, 6))
-#
-#    plt.plot(range(N_mo), FCI_densities[i], ls="--", label="FCI", color='black', marker='o')
-#    plt.plot(range(N_mo), converged_densities[i], ls="-.", label="Cluster", color='r', marker='x')
-#    plt.plot(range(N_mo), converged_densities_KS[i], ls=":", label="KS", color='b', marker='+')
-#
-#    plt.title("Interatomic distance of U = {}".format(U_list[i]))
-#    plt.xlabel("Site", fontsize=17)
-#    plt.ylabel("Orbital occupation", fontsize=17)
-#    plt.grid(True)
-#
-#    plt.legend()
-#    plt.xticks(fontsize=17)
-#    plt.yticks(fontsize=17)
-#    plt.gca().yaxis.set_major_formatter(ticker.FormatStrFormatter('%.5f'))
-#    plt.show()
+for i in range(len(U_list)):
+    plt.figure(figsize=(8, 6))
+
+    plt.plot(range(N_mo), FCI_densities[i], ls="--", label="FCI", color='black', marker='o')
+    plt.plot(range(N_mo), converged_densities[i], ls="-.", label="Cluster", color='r', marker='x')
+    plt.plot(range(N_mo), converged_densities_KS[i], ls=":", label="KS", color='b', marker='+')
+
+    plt.title("Interatomic distance of U = {}".format(U_list[i]))
+    plt.xlabel("Site", fontsize=17)
+    plt.ylabel("Orbital occupation", fontsize=17)
+    plt.grid(True)
+
+    plt.legend()
+    plt.xticks(fontsize=17)
+    plt.yticks(fontsize=17)
+    plt.gca().yaxis.set_major_formatter(ticker.FormatStrFormatter('%.5f'))
+    plt.show()
 
 
 plt.rc('font',  family='serif') 
