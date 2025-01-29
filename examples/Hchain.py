@@ -19,12 +19,12 @@ def norm_density(params):
     global occ_KS
 
     # Use symmetry for the KS potential (depends on the system!)
-    v_KS = np.zeros(2*(len(params)))
+    v_Hxc = np.zeros(2*(len(params)))
     for i in range(len(params)):
-      v_KS[i] = params[i]
-      v_KS[-(i+1)] = params[i]
+      v_Hxc[i] = params[i]
+      v_Hxc[-(i+1)] = params[i]
 
-    h_OAO_vKS = h_OAO + np.diag(v_KS)
+    h_OAO_vKS = h_OAO + np.diag(v_Hxc)
     sum_site_energy = 0
     for impurity_index in range(N_mo):
         # permutation is done on the Hamiltonian, that's all
@@ -88,6 +88,7 @@ FCI_densities = []
 FCI_energies = []
 E_HF_list = []
 E_tot = []
+E_tot_singleshot = []
 
 Distance=[0.4,0.5,0.6,0.7,0.8,0.9,1.0,1.2,1.5,2.0,2.5,3.0]
 for R in Distance:
@@ -125,10 +126,10 @@ for R in Distance:
     print(f"\nStarting optimization for R = {R}") 
     Optimized = scipy.optimize.minimize(norm_density, x0=initial_guess, method='L-BFGS-B', options=options_optimizer) 
     print(Optimized)
-    v_KS = np.zeros(2*(len(Optimized.x)))
+    v_Hxc = np.zeros(2*(len(Optimized.x)))
     for i in range(len(Optimized.x)):
-      v_KS[i] = Optimized.x[i]
-      v_KS[-(i+1)] = Optimized.x[i]
+      v_Hxc[i] = Optimized.x[i]
+      v_Hxc[-(i+1)] = Optimized.x[i]
     # Store results after optimization 
     converged_densities.append(occ_cluster) 
     converged_densities_KS.append(occ_KS) 
@@ -136,12 +137,13 @@ for R in Distance:
     print("Final converged density:", occ_cluster)
     print("Final converged KS density:", occ_KS)
     print("FCI density:",FCI_density)
-    print("Final KS potentials:", v_KS)
+    print("Final Hxc potentials:", v_Hxc)
  
-    h_OAO_vKS = h_OAO + np.diag(v_KS)
+    h_OAO_vKS = h_OAO + np.diag(v_Hxc)
 
     # Now compute the energy:
     sum_site_energy = 0
+    sum_site_energy_singleshot = 0
     for impurity_index in range(N_mo):
         # permutation is done on the Hamiltonian, that's all
         h_permuted = lpfet.switch_sites_matrix(h_OAO_vKS, impurity_index)
@@ -170,7 +172,25 @@ for R in Distance:
         # Using g_cl_core instead of g_Ht gives the same result:
         #E_fragment = 0.5*np.einsum('q,q', (h_Ht[0,:N_mo_cl] + h_cl_core[0,:]), RDM1_cl_free[0,:])+(1./2)*np.einsum('qrs,qrs', g_cl_core[0,:,:,:], RDM2_cl_free[0,:,:,:])
         sum_site_energy += E_fragment
+
+        # Now, we also want the energy without self-consistency, meaning without the Hxc potential:
+        h_permuted = lpfet.switch_sites_matrix(h_OAO, impurity_index)
+        epsil, C = scipy.linalg.eigh(h_permuted)
+        RDM_OAO = C[:, :N_occ] @ C[:, :N_occ].T
+        # Get the householder orbitals:
+        # The orbitals are sorted as 1) cluster 2) occupied environment 3) virtual environment
+        C_ht = lpfet.Householder_orbitals(RDM_OAO,N_mo_cl)
+        # Compute the 1- and 2-body integrals
+        h_Ht, g_Ht = tools.transform_1_2_body_tensors_in_new_basis( h_OAO_permuted, g_OAO_permuted, C_ht )
+        core_energy, h_cl_core, g_cl_core = tools.qc_get_active_space_integrals(h_Ht, g_Ht, env_occ_indices, cluster_indices)
+        # Build the Hamiltonian of the cluster using the active space and frozen-core orbitals
+        H_cl = tools.build_hamiltonian_quantum_chemistry( h_cl_core, g_cl_core, basis_cl, a_dag_a_cl )
+        E_cl, Psi_cl = scipy.linalg.eigh(H_cl.A)
+        RDM1_cl_free, RDM2_cl_free = tools.build_1rdm_and_2rdm_spin_free( Psi_cl[:,0], a_dag_a_cl )
+        # According to Eq. 28 of Wouters2016's paper
+        E_fragment_singleshot = 0.5*np.einsum('q,q', (h_Ht[0,:N_mo_cl] + h_cl_core[0,:]), RDM1_cl_free[0,:])+(1./2)*np.einsum('qrs,qrs', g_Ht[0,:N_mo_cl,:N_mo_cl,:N_mo_cl], RDM2_cl_free[0,:,:,:])
     E_tot.append(sum_site_energy + E_nuc)
+    E_tot_singleshot.append(sum_site_energy_singleshot + E_nuc)
 
 #####################################################
 #                    PLOTS                          #
@@ -194,6 +214,7 @@ for R in Distance:
 #    plt.show()
 
 plt.plot(Distance, FCI_energies, label="FCI",color='black', linestyle='-', marker='o')
+plt.plot(Distance, E_tot, label="Embedding Energy SingleShot",color='orange', linestyle='--', marker='x')
 plt.plot(Distance, E_tot, label="Embedding Energy",color='dodgerblue', linestyle='--', marker='s')
 plt.xlabel('Distance [angstrom]', fontsize=17)
 plt.ylabel('Energy [hartree]', fontsize=17)
