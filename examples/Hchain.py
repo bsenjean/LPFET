@@ -46,17 +46,15 @@ def norm_density(params):
         # Build the Hamiltonian of the cluster using the active space and frozen-core orbitals
         H_cl = tools.build_hamiltonian_quantum_chemistry( h_cl_core, g_cl_core, basis_cl, a_dag_a_cl )
         # Solve the Hamiltonian
-        E_cl, Psi_cl = scipy.linalg.eigh(H_cl.A)
+        E_cl, Psi_cl = scipy.linalg.eigh(H_cl.toarray())
         # Extract the 1RDM of the ground state and the occupation of the impurity site
         RDM1_cl = tools.build_1rdm_alpha(Psi_cl[:,0], a_dag_a_cl)
         occ_cluster[impurity_index] = RDM1_cl[0,0]
         occ_KS[impurity_index] = RDM_OAO[0,0]
 
     # impose the last site occupation to match the number of electrons
-    penalty = np.abs(occ_cluster[N_mo-1] - (N_el//2 - sum(occ_cluster[:N_mo-1])))
-    occ_cluster[N_mo-1] = N_el//2 - sum(occ_cluster[:N_mo-1])
     dens_diff_list = occ_cluster - occ_KS
-    Dens_diff = np.linalg.norm(dens_diff_list) + penalty
+    Dens_diff = np.linalg.norm(dens_diff_list)
 
     return Dens_diff 
 
@@ -78,7 +76,6 @@ N_el_env = N_el-N_el_cl
 N_occ_env = N_el_env//2
 
 # setting initial parameters 
-options_optimizer = {"maxiter": 2000, "ftol": 1e-6} 
 initial_guess = np.zeros(N_mo//2)
 
 # Lists to store results
@@ -124,7 +121,7 @@ for R in Distance:
     occ_KS = np.zeros(N_mo)
 
     print(f"\nStarting optimization for R = {R}") 
-    Optimized = scipy.optimize.minimize(norm_density, x0=initial_guess, method='L-BFGS-B', options=options_optimizer) 
+    Optimized = scipy.optimize.minimize(norm_density, x0=initial_guess, method='L-BFGS-B') 
     print(Optimized)
     v_Hxc = np.zeros(2*(len(Optimized.x)))
     for i in range(len(Optimized.x)):
@@ -136,7 +133,6 @@ for R in Distance:
     print("\nOptimization completed.")
     print("Final converged density:", occ_cluster)
     print("Final converged KS density:", occ_KS)
-    print("FCI density:",FCI_density)
     print("Final Hxc potentials:", v_Hxc)
  
     h_OAO_vKS = h_OAO + np.diag(v_Hxc)
@@ -163,7 +159,7 @@ for R in Distance:
         core_energy, h_cl_core, g_cl_core = tools.qc_get_active_space_integrals(h_Ht, g_Ht, env_occ_indices, cluster_indices)
         # Build the Hamiltonian of the cluster using the active space and frozen-core orbitals
         H_cl = tools.build_hamiltonian_quantum_chemistry( h_cl_core, g_cl_core, basis_cl, a_dag_a_cl )
-        E_cl, Psi_cl = scipy.linalg.eigh(H_cl.A)
+        E_cl, Psi_cl = scipy.linalg.eigh(H_cl.toarray())
         RDM1_cl_free, RDM2_cl_free = tools.build_1rdm_and_2rdm_spin_free( Psi_cl[:,0], a_dag_a_cl )
         # Formula from Wafa, doesn't work:
         #E_fragment = np.einsum('q,q', (h_cl_core[0,:]), RDM1_cl_free[0,:])+(1./2)*np.einsum('qrs,qrs', g_cl_core[0,:,:,:], RDM2_cl_free[0,:,:,:])
@@ -185,7 +181,7 @@ for R in Distance:
         core_energy, h_cl_core, g_cl_core = tools.qc_get_active_space_integrals(h_Ht, g_Ht, env_occ_indices, cluster_indices)
         # Build the Hamiltonian of the cluster using the active space and frozen-core orbitals
         H_cl = tools.build_hamiltonian_quantum_chemistry( h_cl_core, g_cl_core, basis_cl, a_dag_a_cl )
-        E_cl, Psi_cl = scipy.linalg.eigh(H_cl.A)
+        E_cl, Psi_cl = scipy.linalg.eigh(H_cl.toarray())
         RDM1_cl_free, RDM2_cl_free = tools.build_1rdm_and_2rdm_spin_free( Psi_cl[:,0], a_dag_a_cl )
         # According to Eq. 28 of Wouters2016's paper
         E_fragment_singleshot = 0.5*np.einsum('q,q', (h_Ht[0,:N_mo_cl] + h_cl_core[0,:]), RDM1_cl_free[0,:])+(1./2)*np.einsum('qrs,qrs', g_Ht[0,:N_mo_cl,:N_mo_cl,:N_mo_cl], RDM2_cl_free[0,:,:,:])
@@ -195,26 +191,26 @@ for R in Distance:
 #####################################################
 #                    PLOTS                          #
 #####################################################
-#for i in range(len(Distance)):
-#    plt.figure(figsize=(8, 6))
-#
-#    plt.plot(range(N_mo), FCI_densities[i], ls="--", label="FCI", color='black', marker='o')
-#    plt.plot(range(N_mo), converged_densities[i], ls="-.", label="Cluster", color='r', marker='x')
-#    plt.plot(range(N_mo), converged_densities_KS[i], ls=":", label="KS", color='b', marker='+')
-#
-#    plt.title("Interatomic distance of R = {}".format(Distance[i]))
-#    plt.xlabel("Hydrogen", fontsize=17)
-#    plt.ylabel("Orbital occupation", fontsize=17)
-#    plt.grid(True)
-#
-#    plt.legend()
-#    plt.xticks(fontsize=17)
-#    plt.yticks(fontsize=17)
-#    plt.gca().yaxis.set_major_formatter(ticker.FormatStrFormatter('%.5f'))
-#    plt.show()
+for i in range(len(Distance)):
+    plt.figure(figsize=(8, 6))
+
+    plt.plot(range(N_mo), FCI_densities[i], ls="--", label="FCI", color='black', marker='o')
+    plt.plot(range(N_mo), converged_densities[i], ls="-.", label="Cluster", color='r', marker='x')
+    plt.plot(range(N_mo), converged_densities_KS[i], ls=":", label="KS", color='b', marker='+')
+
+    plt.title("Interatomic distance of R = {}".format(Distance[i]))
+    plt.xlabel("Hydrogen", fontsize=17)
+    plt.ylabel("Orbital occupation", fontsize=17)
+    plt.grid(True)
+
+    plt.legend()
+    plt.xticks(fontsize=17)
+    plt.yticks(fontsize=17)
+    plt.gca().yaxis.set_major_formatter(ticker.FormatStrFormatter('%.5f'))
+    plt.show()
 
 plt.plot(Distance, FCI_energies, label="FCI",color='black', linestyle='-', marker='o')
-plt.plot(Distance, E_tot, label="Embedding Energy SingleShot",color='orange', linestyle='--', marker='x')
+plt.plot(Distance, E_tot_singleshot, label="Embedding Energy SingleShot",color='orange', linestyle='--', marker='x')
 plt.plot(Distance, E_tot, label="Embedding Energy",color='dodgerblue', linestyle='--', marker='s')
 plt.xlabel('Distance [angstrom]', fontsize=17)
 plt.ylabel('Energy [hartree]', fontsize=17)

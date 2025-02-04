@@ -16,19 +16,10 @@ def norm_density(params):
     global occ_cluster
     global occ_KS
 
-   
-    v_KS = np.zeros((len(params)))
-    for i in range(len(params)):
-        v_KS[i] = params[i]
-        v_KS[-1] = params[-1]
+    v_Hxc = params.copy()
 
-
-    v_hxc = v_KS - v_ext_array
-
-    h_KS = lpfet.h_matrix(N_mo, N_el, t, v_KS, configuration="ring") 
-    sum_site_energy = 0
+    h_KS = lpfet.h_matrix(N_mo, N_el, t, v_ext_array + v_Hxc, configuration="ring") 
     for impurity_index in range(N_mo):
-        
 
         h_KS_permuted = lpfet.switch_sites_matrix(h_KS, impurity_index)
         epsil, C = scipy.linalg.eigh(h_KS_permuted)
@@ -53,7 +44,7 @@ def norm_density(params):
         
         # Building the one-ele Hamiltonian with core contribution 
         core_energy, h_cl_core, U_cl_core = tools.fh_get_active_space_integrals((P_mod.T) @ h_KS_permuted @ P_mod, U_HH, frozen_indices=[4,5], active_indices=[0,1])
-        h_cl_core = h_cl_core - np.diag([v_hxc[impurity_index], 0])
+        h_cl_core = h_cl_core - np.diag([v_Hxc[impurity_index], 0])
 
         # Build the Hamiltonian of the cluster using the active space and frozen-core orbitals
         H_cl = tools.build_hamiltonian_quantum_chemistry( h_cl_core, U_cl_core, basis_cl, a_dag_a_cl )
@@ -64,11 +55,8 @@ def norm_density(params):
         occ_cluster[impurity_index] = RDM1_cl[0,0]
         occ_KS[impurity_index] = RDM_KS_HH[0,0]
 
-    # impose the last site occupation to match the number of electrons
-    penalty = np.abs(occ_cluster[N_mo-1] - (N_el//2 - sum(occ_cluster[:N_mo-1])))
-    occ_cluster[N_mo-1] = N_el//2 - sum(occ_cluster[:N_mo-1])
     dens_diff_list = occ_cluster - occ_KS
-    Dens_diff = np.linalg.norm(dens_diff_list) + penalty
+    Dens_diff = np.linalg.norm(dens_diff_list)
 
     return Dens_diff 
 
@@ -88,14 +76,16 @@ a_dag_a_cl= tools.build_operator_a_dagger_a(basis_cl)
 
 
 # setting initial parameters 
-options_optimizer = {"maxiter": 2000, "ftol": 1e-6} 
-initial_guess = np.zeros(N_mo)
-
-t=[1,1,1,1,1,1]
+t=np.array([1,1,1,1,1,1])
 v_ext=1
-v_ext_array=[-v_ext,2*v_ext,-2*v_ext,3*v_ext,-3*v_ext,v_ext]
-#U_list=np.linspace(0,15,15)
-U_list=[9.0]
+v_ext_array=np.array([-v_ext,2*v_ext,-2*v_ext,3*v_ext,-3*v_ext,v_ext])
+#U_list=np.linspace(0,15,16)
+U_list=[4.0]
+basin_hopping = True
+opt_method = ["L-BFGS-B","SLSQP"][0]
+initial_guess = np.zeros(N_mo)
+#initial_guess = -v_ext_array
+#initial_guess = np.random.rand(N_mo)
 
 # Lists to store results
 converged_densities = [] 
@@ -105,9 +95,10 @@ FCI_energies = []
 E_HF_list = []
 E_tot = []
 
+h =lpfet.h_matrix(N_mo, N_el, t, v_ext_array, configuration="ring")
+
 for it, U in enumerate(U_list):
 
-    h =lpfet.h_matrix(N_mo, N_el, t, v_ext_array, configuration="ring")
     U_operator=lpfet.u_matrix(N_mo,U)
     H_ref=tools.build_hamiltonian_fermi_hubbard(h,U_operator,basis,a_dag_a)
     # Solve the FCI problem using eigsh (sparse eigenvalue solver)
@@ -125,31 +116,26 @@ for it, U in enumerate(U_list):
     occ_cluster = np.zeros(N_mo)
     occ_KS = np.zeros(N_mo)
 
-
-  
-
     print(f"\nStarting optimization for U = {U}") 
-    Optimized = scipy.optimize.minimize(norm_density, x0=initial_guess, method='L-BFGS-B', options=options_optimizer) 
+    if not basin_hopping:
+      Optimized = scipy.optimize.minimize(norm_density, x0=initial_guess, method=opt_method) 
+    else:
+      Optimized = scipy.optimize.basinhopping(norm_density, x0=initial_guess, minimizer_kwargs={"method":opt_method},niter=100) 
     print(Optimized)
-    v_KS = np.zeros((len(Optimized.x)))
-    for i in range(len(Optimized.x)):
-        v_KS[i] = Optimized.x[i]
-        v_KS[-1] = Optimized.x[-1]
-        
-    v_hxc = v_KS - v_ext_array
+    v_Hxc = Optimized.x
     # Store results after optimization 
     converged_densities.append(occ_cluster) 
     converged_densities_KS.append(occ_KS) 
     print("\nOptimization completed.")
     print("Final converged density:", occ_cluster)
     print("Final converged KS density:", occ_KS)
-    print("FCI density:",FCI_density)
-    print("Final KS potentials:", v_KS)
+    print("Final Hxc potentials:", v_Hxc)
  
-    h_KS = lpfet.h_matrix(N_mo, N_el, t, v_KS, configuration="ring") 
+    h_KS = lpfet.h_matrix(N_mo, N_el, t, v_ext_array + v_Hxc, configuration="ring") 
 
     # Now compute the energy:
     sum_site_energy = 0
+    occ_cluster_test = np.zeros(N_mo)
     for impurity_index in range(N_mo):
         # permutation is done on the Hamiltonian, that's all
         h_KS_permuted = lpfet.switch_sites_matrix(h_KS, impurity_index)
@@ -174,18 +160,21 @@ for it, U in enumerate(U_list):
         
         #Building the one-ele Hamiltionien with core contribution 
         core_energy, h_cl_core,U_cl_core=tools.fh_get_active_space_integrals((P_mod.T)@h_KS_permuted@P_mod,U_HH,frozen_indices=[4,5],active_indices=[0,1])
-        h_cl_core=h_cl_core-np.diag([v_hxc[impurity_index],0])
+        h_cl_core=h_cl_core-np.diag([v_Hxc[impurity_index],0])
             
         #building the cluster many-electron Hamiltonien 
-        H_cl=tools.build_hamiltonian_fermi_hubbard(h_cl_core,U_cl_core,basis_cl,a_dag_a_cl)
+        H_cl = tools.build_hamiltonian_quantum_chemistry(h_cl_core,U_cl_core,basis_cl,a_dag_a_cl)
         
         #Solve the many-electron Hamiltonien 
         E_cl,Psi_cl= scipy.linalg.eigh(H_cl.toarray())
+        RDM1_cl = tools.build_1rdm_alpha(Psi_cl[:,0], a_dag_a_cl)
+        occ_cluster_test[impurity_index] = RDM1_cl[0,0]
         RDM1_cl_free, RDM2_cl_free = tools.build_1rdm_and_2rdm_spin_free( Psi_cl[:,0], a_dag_a_cl )
 
         E_fragment = np.einsum('q,q', (h_cl_core[0,:]), RDM1_cl_free[0,:])+(1./2)*np.einsum('qrs,qrs', U_cl_core[0,:,:,:], RDM2_cl_free[0,:,:,:])
        
         sum_site_energy += E_fragment
+    print("Final cluster occupation:",occ_cluster_test,sum(occ_cluster_test))
     E_tot.append(sum_site_energy)
 
 
@@ -210,15 +199,15 @@ for i in range(len(U_list)):
     plt.xticks(fontsize=17)
     plt.yticks(fontsize=17)
     plt.gca().yaxis.set_major_formatter(ticker.FormatStrFormatter('%.5f'))
+    plt.savefig("./figures/U{:.3f}_without_chempot_or_corrections_start_with_minus_vext.pdf".format(U_list[i]), format="pdf", bbox_inches="tight")
     plt.show()
 
-
-plt.rc('font',  family='serif') 
-plt.rc('font',  size='14') 
-plt.rc('xtick', labelsize='x-large')
-plt.rc('ytick', labelsize='x-large') 
-plt.rc('lines', linewidth='2')
-plt.rcParams.update({ "text.usetex": True})
+#plt.rc('font',  family='serif') 
+#plt.rc('font',  size='14') 
+#plt.rc('xtick', labelsize='x-large')
+#plt.rc('ytick', labelsize='x-large') 
+#plt.rc('lines', linewidth='2')
+#plt.rcParams.update({ "text.usetex": True})
 
 plt.plot(U_list, FCI_energies, label="FCI",color='black', linestyle='-', marker='o')
 plt.plot(U_list, E_tot, label="Embedding Energy",color='dodgerblue', linestyle='--', marker='s')
@@ -228,6 +217,5 @@ plt.grid(True)
 plt.legend()
 plt.xticks(fontsize=17)
 plt.yticks(fontsize=17)
+plt.savefig("./figures/Hubbard_energy_without_chempot_or_corrections_start_with_minus_vext.pdf".format(U_list[i]), format="pdf", bbox_inches="tight")
 plt.show()
-
-
