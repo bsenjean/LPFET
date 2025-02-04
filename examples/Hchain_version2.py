@@ -38,11 +38,12 @@ def norm_density(params):
         h_OAO_permuted = lpfet.switch_sites_matrix(h_OAO,impurity_index)
         g_OAO_permuted = lpfet.switch_sites_tensor4(g_OAO,impurity_index)
         # Compute the 1- and 2-body integrals
-        h_Ht, g_Ht = tools.transform_1_2_body_tensors_in_new_basis( h_OAO_permuted, g_OAO_permuted, C_ht )
+        h_Ht, g_Ht = tools.transform_1_2_body_tensors_in_new_basis( h_permuted, g_OAO_permuted, C_ht )
         # Use the Frozen-core (active space) approximation.
         cluster_indices = [ i for i in range(N_mo_cl) ]
         env_occ_indices = [ N_mo_cl + i for i in range(N_occ_env) ]
         core_energy, h_cl_core, g_cl_core = tools.qc_get_active_space_integrals(h_Ht, g_Ht, env_occ_indices, cluster_indices)
+        h_cl_core = h_cl_core - np.diag([v_Hxc[impurity_index], 0])
         # Build the Hamiltonian of the cluster using the active space and frozen-core orbitals
         H_cl = tools.build_hamiltonian_quantum_chemistry( h_cl_core, g_cl_core, basis_cl, a_dag_a_cl )
         # Solve the Hamiltonian
@@ -157,11 +158,12 @@ for R in Distance:
         h_OAO_permuted = lpfet.switch_sites_matrix(h_OAO,impurity_index)
         g_OAO_permuted = lpfet.switch_sites_tensor4(g_OAO,impurity_index)
         # Compute the 1- and 2-body integrals
-        h_Ht, g_Ht = tools.transform_1_2_body_tensors_in_new_basis( h_OAO_permuted, g_OAO_permuted, C_ht )
+        h_Ht, g_Ht = tools.transform_1_2_body_tensors_in_new_basis( h_permuted, g_OAO_permuted, C_ht )
         # Use the Frozen-core (active space) approximation.
         cluster_indices = [ i for i in range(N_mo_cl) ]
         env_occ_indices = [ N_mo_cl + i for i in range(N_occ_env) ]
         core_energy, h_cl_core, g_cl_core = tools.qc_get_active_space_integrals(h_Ht, g_Ht, env_occ_indices, cluster_indices)
+        h_cl_core = h_cl_core - np.diag([v_Hxc[impurity_index], 0])
         # Build the Hamiltonian of the cluster using the active space and frozen-core orbitals
         H_cl = tools.build_hamiltonian_quantum_chemistry( h_cl_core, g_cl_core, basis_cl, a_dag_a_cl )
         E_cl, Psi_cl = scipy.linalg.eigh(H_cl.toarray())
@@ -212,7 +214,7 @@ for i in range(len(Distance)):
     plt.xticks(fontsize=17)
     plt.yticks(fontsize=17)
     plt.gca().yaxis.set_major_formatter(ticker.FormatStrFormatter('%.5f'))
-    plt.savefig("./figures/density_R{:.3f}_{}.pdf".format(Distance[i],opt_method), format="pdf", bbox_inches="tight")
+    plt.savefig("./figures/density_R{:.3f}_{}_version2.pdf".format(Distance[i],opt_method), format="pdf", bbox_inches="tight")
     plt.show()
 
 plt.plot(Distance, FCI_energies, label="FCI",color='black', linestyle='-', marker='o')
@@ -224,6 +226,6 @@ plt.grid(True)
 plt.legend()
 plt.xticks(fontsize=17)
 plt.yticks(fontsize=17)
-plt.savefig("./figures/Hchain_energy_{}.pdf".format(opt_method), format="pdf", bbox_inches="tight")
+plt.savefig("./figures/Hchain_energy_{}_version2.pdf".format(opt_method), format="pdf", bbox_inches="tight")
 plt.show()
 

@@ -22,7 +22,6 @@ def norm_density(params):
     for impurity_index in range(N_mo):
 
         h_KS_permuted = lpfet.switch_sites_matrix(h_KS, impurity_index)
-        h_permuted = lpfet.switch_sites_matrix(h, impurity_index)
         epsil, C = scipy.linalg.eigh(h_KS_permuted)
         RDM_KS = C[:, :N_occ] @ C[:, :N_occ].T 
         # Get the householder orbitals:
@@ -30,12 +29,14 @@ def norm_density(params):
         C_ht = lpfet.Householder_orbitals(RDM_KS,N_mo_cl)
 
         # Compute the 1- and 2-body integrals
-        h_Ht = C_ht.T@h_permuted@C_ht
+        h_Ht = C_ht.T@h_KS_permuted@C_ht
         g_Ht = lpfet.u_matrix(N_mo, U, delocalized_rep=True, orb_coeffs=C_ht)
         # Use the Frozen-core (active space) approximation.
         cluster_indices = [ i for i in range(N_mo_cl) ]
         env_occ_indices = [ N_mo_cl + i for i in range(N_occ_env) ]
         core_energy, h_cl_core, g_cl_core = tools.qc_get_active_space_integrals(h_Ht, g_Ht, env_occ_indices, cluster_indices)
+        h_cl_core = h_cl_core - np.diag([v_Hxc[impurity_index], 0])
+
         # Build the Hamiltonian of the cluster using the active space and frozen-core orbitals
         H_cl = tools.build_hamiltonian_quantum_chemistry( h_cl_core, g_cl_core, basis_cl, a_dag_a_cl )
         # Solve the Hamiltonian
@@ -74,7 +75,7 @@ v_ext_array=np.array([-v_ext,2*v_ext,-2*v_ext,3*v_ext,-3*v_ext,v_ext])
 U_list=np.linspace(0,15,16)
 basin_hopping = False
 opt_method = ["L-BFGS-B","SLSQP"][1]
-init = ["zero","vext"][1]
+init = ["zero","vext"][0]
 if init == "zero":
   initial_guess = np.zeros(N_mo)
 elif init == "vext":
@@ -133,19 +134,20 @@ for it, U in enumerate(U_list):
     for impurity_index in range(N_mo):
         # permutation is done on the Hamiltonian, that's all
         h_KS_permuted = lpfet.switch_sites_matrix(h_KS, impurity_index)
-        h_permuted = lpfet.switch_sites_matrix(h, impurity_index)
+
         epsil,C=scipy.linalg.eigh(h_KS_permuted)
         RDM_KS= (C[:,:N_occ])@(C[:,:N_occ].T)
         # Get the householder orbitals:
         # The orbitals are sorted as 1) cluster 2) occupied environment 3) virtual environment
         C_ht = lpfet.Householder_orbitals(RDM_KS,N_mo_cl)
         # Compute the 1- and 2-body integrals
-        h_Ht = C_ht.T@h_permuted@C_ht
+        h_Ht = C_ht.T@h_KS_permuted@C_ht
         g_Ht = lpfet.u_matrix(N_mo, U, delocalized_rep=True, orb_coeffs=C_ht)
         # Use the Frozen-core (active space) approximation.
         cluster_indices = [ i for i in range(N_mo_cl) ]
         env_occ_indices = [ N_mo_cl + i for i in range(N_occ_env) ]
         core_energy, h_cl_core, g_cl_core = tools.qc_get_active_space_integrals(h_Ht, g_Ht, env_occ_indices, cluster_indices)
+        h_cl_core = h_cl_core - np.diag([v_Hxc[impurity_index], 0])
         # Build the Hamiltonian of the cluster using the active space and frozen-core orbitals
         H_cl = tools.build_hamiltonian_quantum_chemistry( h_cl_core, g_cl_core, basis_cl, a_dag_a_cl )
         E_cl, Psi_cl = scipy.linalg.eigh(H_cl.toarray())
@@ -181,8 +183,15 @@ for i in range(len(U_list)):
     plt.xticks(fontsize=17)
     plt.yticks(fontsize=17)
     plt.gca().yaxis.set_major_formatter(ticker.FormatStrFormatter('%.5f'))
-    plt.savefig("./figures/density_U{:.3f}_ring_{}_{}.pdf".format(U_list[i],opt_method,init), format="pdf", bbox_inches="tight")
+    plt.savefig("./figures/density_U{:.3f}_ring_{}_{}_version2.pdf".format(U_list[i],opt_method,init), format="pdf", bbox_inches="tight")
     plt.show()
+
+#plt.rc('font',  family='serif') 
+#plt.rc('font',  size='14') 
+#plt.rc('xtick', labelsize='x-large')
+#plt.rc('ytick', labelsize='x-large') 
+#plt.rc('lines', linewidth='2')
+#plt.rcParams.update({ "text.usetex": True})
 
 plt.plot(U_list, FCI_energies, label="FCI",color='black', linestyle='-', marker='o')
 plt.plot(U_list, E_tot, label="Embedding Energy",color='dodgerblue', linestyle='--', marker='s')
@@ -192,5 +201,5 @@ plt.grid(True)
 plt.legend()
 plt.xticks(fontsize=17)
 plt.yticks(fontsize=17)
-plt.savefig("./figures/Hubbard_ring_energy_{}_{}.pdf".format(U_list[i],opt_method,init), format="pdf", bbox_inches="tight")
+plt.savefig("./figures/Hubbard_ring_energy_{}_{}_version2.pdf".format(U_list[i],opt_method,init), format="pdf", bbox_inches="tight")
 plt.show()
