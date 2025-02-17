@@ -61,4 +61,4 @@ ax.legend(framealpha=0.8, prop={'size': 20}, loc="best")
 ax.set_ylim([-15,0])
 plt.tight_layout()
 plt.savefig('energy_Hubbard_ring.pdf'.format(name))\
-plt.show()
+
