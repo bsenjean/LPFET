@@ -91,3 +91,40 @@ def h_matrix(n_mo, n_elec, t, v, configuration="ring", BLA_mode=False, alpha=0):
     tM += np.diag(v)
 
     return tM
+
+
+
+def switch_sites_vector(v, new_impurity):
+    """Permute vector to set new_impurity as element 0."""
+    v_permuted = v.copy()
+    v_permuted[0], v_permuted[new_impurity] = v_permuted[new_impurity], v_permuted[0]
+    return v_permuted
+
+
+
+def householder_orbitals(RDM, N_mo_cl):
+    """
+    Generate Householder-transformed orbitals for embedding.
+    
+    Parameters:
+    -----------
+    RDM : array
+        Reduced density matrix
+    N_mo_cl : int
+        Number of cluster orbitals
+        
+    Returns:
+    --------
+    array : Householder orbitals
+    """
+    P, v = tools.householder_transformation(RDM)
+    RDM_ht = P @ RDM @ P
+    RDM_ht_env = RDM_ht[N_mo_cl:, N_mo_cl:]
+    
+    # Separate occupied from virtual orbitals
+    occ_env, C_ht_env = scipy.linalg.eigh(RDM_ht_env)
+    C_ht = direct_sum(np.eye(N_mo_cl), np.fliplr(C_ht_env))
+    
+    # Transform back to original basis
+    return P @ C_ht
+
