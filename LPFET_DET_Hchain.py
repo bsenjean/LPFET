@@ -225,7 +225,7 @@ def calculate_LPFET_energy(v_Hxc, E_nuc):
         RDM_OAO = C[:, :N_occ] @ C[:, :N_occ].T 
         
         # Embedding orbitals
-        C_ht = householder_orbitals(RDM_OAO, N_mo_cl)
+        C_ht =  lpfet.householder_orbitals(RDM_OAO, N_mo_cl)
         
         # Transform integrals
         h_OAO_permuted = lpfet.switch_sites_matrix(h_OAO, impurity_index)
