@@ -85,13 +85,13 @@ def norm_density_LPFET(params):
     v_hxc = params.copy()
     v_KS = v_hxc + v_ext_array
     
-    h_KS = h_matrix(N_mo, N_el, t, v_KS, configuration="ring")
-    h = h_matrix(N_mo, N_el, t, v_ext_array, configuration="ring")
+    h_KS = lpfet.h_matrix(N_mo, N_el, t, v_KS, configuration="ring")
+    h =  lpfet.h_matrix(N_mo, N_el, t, v_ext_array, configuration="ring")
     
     for impurity_index in range(N_mo):
         # Solve KS equations with permuted Hamiltonian
-        h_KS_permuted = switch_sites_matrix(h_KS, impurity_index)
-        h_permuted = switch_sites_matrix(h, impurity_index)
+        h_KS_permuted =  lpfet.switch_sites_matrix(h_KS, impurity_index)
+        h_permuted =  lpfet.switch_sites_matrix(h, impurity_index)
         
         epsil, C = scipy.linalg.eigh(h_KS_permuted)
         RDM_KS = C[:, :N_occ] @ C[:, :N_occ].T
@@ -102,11 +102,11 @@ def norm_density_LPFET(params):
         
         # Diagonalize environment
         n_core, Q = eigh(RDM_KS_HH[N_mo_cl:, N_mo_cl:].copy())
-        Q = direct_sum(np.eye(N_mo_cl), Q)
+        Q =  lpfet.direct_sum(np.eye(N_mo_cl), Q)
         P_mod = P @ Q
         
         # Build cluster Hamiltonian
-        U_HH = u_matrix(N_mo, U_current, delocalized_rep=True, orb_coeffs=P_mod)
+        U_HH =  lpfet.u_matrix(N_mo, U_current, delocalized_rep=True, orb_coeffs=P_mod)
         # U_cl = U_HH[:N_mo_cl, :N_mo_cl, :N_mo_cl, :N_mo_cl].copy()
         
         core_energy, h_cl_core, U_cl_core = tools.fh_get_active_space_integrals(
@@ -115,7 +115,7 @@ def norm_density_LPFET(params):
         )
         
         # Apply local potential correction
-        v_hxc_permuted = switch_sites_vector(v_hxc, impurity_index)
+        v_hxc_permuted =  lpfet.switch_sites_vector(v_hxc, impurity_index)
         mu = sum((P_mod[:, 1]**2) * v_hxc_permuted)
         h_cl_core = h_cl_core - np.diag([mu, 0])
         
@@ -165,16 +165,16 @@ def norm_density_DET(params):
     
     for impurity_index in range(N_mo):
         # Solve KS equations
-        h_KS_permuted = switch_sites_matrix(h_KS, impurity_index)
+        h_KS_permuted =  lpfet.switch_sites_matrix(h_KS, impurity_index)
         epsil, C = scipy.linalg.eigh(h_KS_permuted)
         RDM_KS = C[:, :N_occ] @ C[:, :N_occ].T
         
         # Get embedding orbitals
-        C_ht = householder_orbitals(RDM_KS, N_mo_cl)
+        C_ht =  lpfet.householder_orbitals(RDM_KS, N_mo_cl)
         
         # Transform integrals
-        h_permuted = switch_sites_matrix(h_DET, impurity_index)
-        g_permuted = switch_sites_tensor4(g_DET, impurity_index)
+        h_permuted =  lpfet.switch_sites_matrix(h_DET, impurity_index)
+        g_permuted =  lpfet.switch_sites_tensor4(g_DET, impurity_index)
         h_Ht, g_Ht = tools.transform_1_2_body_tensors_in_new_basis(
             h_permuted, g_permuted, C_ht
         )
@@ -213,13 +213,13 @@ def norm_density_DET(params):
 def calculate_LPFET_energy(v_hxc, U):
     """Calculate total energy using LPFET method."""
     v_KS = v_hxc + v_ext_array
-    h_KS = h_matrix(N_mo, N_el, t, v_KS, configuration="ring")
-    h = h_matrix(N_mo, N_el, t, v_ext_array, configuration="ring")
+    h_KS =  lpfet.h_matrix(N_mo, N_el, t, v_KS, configuration="ring")
+    h =  lpfet.h_matrix(N_mo, N_el, t, v_ext_array, configuration="ring")
     
     sum_site_energy = 0
     for impurity_index in range(N_mo):
-        h_KS_permuted = switch_sites_matrix(h_KS, impurity_index)
-        h_permuted = switch_sites_matrix(h, impurity_index)
+        h_KS_permuted =  lpfet.switch_sites_matrix(h_KS, impurity_index)
+        h_permuted =  lpfet.switch_sites_matrix(h, impurity_index)
         
         epsil, C = eigh(h_KS_permuted)
         RDM_KS = C[:, :N_occ] @ C[:, :N_occ].T
@@ -228,11 +228,11 @@ def calculate_LPFET_energy(v_hxc, U):
         P, v = tools.householder_transformation(RDM_KS)
         RDM_KS_HH = P @ RDM_KS @ P
         n_core, Q = eigh(RDM_KS_HH[N_mo_cl:, N_mo_cl:].copy())
-        Q = direct_sum(np.eye(N_mo_cl), Q)
+        Q =  lpfet.direct_sum(np.eye(N_mo_cl), Q)
         P_mod = P @ Q
         
         # Build cluster Hamiltonian for energy
-        U_HH = u_matrix(N_mo, U, delocalized_rep=False, orb_coeffs=P_mod)
+        U_HH =  lpfet.u_matrix(N_mo, U, delocalized_rep=False, orb_coeffs=P_mod)
         U_cl = U_HH[:N_mo_cl, :N_mo_cl, :N_mo_cl, :N_mo_cl].copy()
         
         core_energy, h_cl_core, U_cl_core = tools.fh_get_active_space_integrals(
@@ -261,13 +261,13 @@ def calculate_DET_energy(v_Hxc, mu_DET, U):
     
     sum_site_energy = 0
     for impurity_index in range(N_mo):
-        h_KS_permuted = switch_sites_matrix(h_KS, impurity_index)
+        h_KS_permuted =  lpfet.switch_sites_matrix(h_KS, impurity_index)
         epsil, C = scipy.linalg.eigh(h_KS_permuted)
         RDM_KS = C[:, :N_occ] @ C[:, :N_occ].T
         
-        C_ht = householder_orbitals(RDM_KS, N_mo_cl)
-        h_permuted = switch_sites_matrix(h_DET, impurity_index)
-        g_permuted = switch_sites_tensor4(g_DET, impurity_index)
+        C_ht =  lpfet.householder_orbitals(RDM_KS, N_mo_cl)
+        h_permuted =  lpfet.switch_sites_matrix(h_DET, impurity_index)
+        g_permuted =  lpfet.switch_sites_tensor4(g_DET, impurity_index)
         h_Ht, g_Ht = tools.transform_1_2_body_tensors_in_new_basis(
             h_permuted, g_permuted, C_ht
         )
@@ -326,7 +326,7 @@ def run_embedding_calculations():
     intermediate_electron_data_DET = {U: [] for U in U_list}
     
     # DET-specific setup
-    h_DET = h_matrix(N_mo, N_el, t, v_ext_array, configuration="ring")
+    h_DET =  lpfet.h_matrix(N_mo, N_el, t, v_ext_array, configuration="ring")
     g_DET = np.zeros((N_mo, N_mo, N_mo, N_mo))
     
     # Optimization settings
@@ -348,8 +348,8 @@ def run_embedding_calculations():
         
         # FCI reference calculation
         print("Computing FCI reference...")
-        h = h_matrix(N_mo, N_el, t, v_ext_array, configuration="ring")
-        U_operator = u_matrix(N_mo, U)
+        h =  lpfet.h_matrix(N_mo, N_el, t, v_ext_array, configuration="ring")
+        U_operator =  lpfet.u_matrix(N_mo, U)
         H_ref = tools.build_hamiltonian_fermi_hubbard(h, U_operator, basis, a_dag_a)
         E_FCI, Psi_FCI = scipy.sparse.linalg.eigsh(H_ref, which="SA", k=6)
         RDM_FCI = tools.build_1rdm_alpha(Psi_FCI[:, 0], a_dag_a)
