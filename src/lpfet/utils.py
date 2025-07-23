@@ -27,84 +27,12 @@ def switch_sites_tensor4(M, new_impurity):
 
 
 
-def u_matrix(n_mo, U, nearest_neighbor_interactions=False, alpha=0, delocalized_rep=False, orb_coeffs=None):
-    UM = np.zeros((n_mo, n_mo, n_mo, n_mo))
-
-    if nearest_neighbor_interactions:
-        for i in range(n_mo):
-            UM[i, i, i, i] = U
-            for j in range(i + 1, n_mo):
-                UM[i, i, j, j] = UM[j, j, i, i] = alpha * U
-
-    else:
-        if delocalized_rep:
-            for p in range(n_mo):
-                for q in range(n_mo):
-                    for r in range(n_mo):
-                        for s in range(n_mo):
-                            UM[p, q, r, s] = U * np.sum(
-                                orb_coeffs[:, p] * orb_coeffs[:, q] * orb_coeffs[:, r] * orb_coeffs[:, s])
-        else:
-            for i in range(n_mo):
-                UM[i, i, i, i] = U
-
-    return UM
-
-
-
-
-def u_matrix_non_interact_bath(n_mo,U):
-    UM = np.zeros((n_mo, n_mo, n_mo, n_mo))
-    UM[0,0,0,0] = U
-    return UM
-
-
-
-
-def h_matrix(n_mo, n_elec, t, v, configuration="ring", BLA_mode=False, alpha=0):
-    tM = np.zeros((n_mo, n_mo))
-
-    for i in range(n_mo):
-        for j in range(i + 1, n_mo):
-            if j == i + 1:
-                if configuration == "line" and BLA_mode:
-                    if j % 2 != 0:
-                        tM[i, j] = tM[j, i] = -t[i] * (1 + alpha)
-                    else:
-                        tM[i, j] = tM[j, i] = -t[i] * (1 - alpha)
-                else:
-                    tM[i, j] = tM[j, i] = -1* t[i]
-            else:
-                tM[i, j] = tM[j, i] = 0
-
-    if configuration == "ring":
-        if n_elec % 4 == 2:
-            # Periodic BC
-            for i in range(len(t)):
-                tM[0, n_mo - 1] = tM[n_mo - 1, 0] = -1* t[i]
-        elif n_elec % 4 == 0:
-            # Antiperiodic BC
-            tM[0, n_mo - 1] = tM[n_mo - 1, 0] = t[-1]
-
-    elif configuration == "line":
-        pass
-
-    tM += np.diag(v)
-
-    return tM
-
-
-
-
 
 def switch_sites_vector(v, new_impurity):
     """Permute vector to set new_impurity as element 0."""
     v_permuted = v.copy()
     v_permuted[0], v_permuted[new_impurity] = v_permuted[new_impurity], v_permuted[0]
     return v_permuted
-
-
-
 
 
 
@@ -133,4 +61,78 @@ def householder_orbitals(RDM, N_mo_cl):
     
     # Transform back to original basis
     return P @ C_ht
+
+
+def h_matrix(n_mo, n_elec, t, v, configuration="ring"):
+    """
+    Build the one-body Hamiltonian matrix for the Hubbard model.
+    
+    Parameters:
+    -----------
+    n_mo : int
+        Number of molecular orbitals
+    n_elec : int
+        Number of electrons
+    t : array
+        Hopping parameters
+    v : array
+        On-site potentials
+    configuration : str
+        "ring" or "line" geometry
+        
+    Returns:
+    --------
+    array : One-body Hamiltonian matrix
+    """
+    tM = np.zeros((n_mo, n_mo))
+    
+    # Nearest neighbor hopping
+    for i in range(n_mo - 1):
+        tM[i, i + 1] = tM[i + 1, i] = -t[i]
+    
+    # Periodic boundary conditions for ring
+    if configuration == "ring":
+        if n_elec % 4 == 2:
+            tM[0, n_mo - 1] = tM[n_mo - 1, 0] = -t[-1]
+        elif n_elec % 4 == 0:
+            tM[0, n_mo - 1] = tM[n_mo - 1, 0] = t[-1]
+    
+    # Add on-site potentials
+    tM += np.diag(v)
+    return tM
+
+def u_matrix(n_mo, U, delocalized_rep=False, orb_coeffs=None):
+    """
+    Build the two-body interaction tensor.
+    
+    Parameters:
+    -----------
+    n_mo : int
+        Number of molecular orbitals
+    U : float
+        Coulomb repulsion strength
+    delocalized_rep : bool
+        Whether to use delocalized representation
+    orb_coeffs : array
+        Orbital coefficients for transformation
+        
+    Returns:
+    --------
+    array : Two-body interaction tensor
+    """
+    UM = np.zeros((n_mo, n_mo, n_mo, n_mo))
+    
+    if delocalized_rep and orb_coeffs is not None:
+        for p in range(n_mo):
+            for q in range(n_mo):
+                for r in range(n_mo):
+                    for s in range(n_mo):
+                        UM[p, q, r, s] = U * np.sum(
+                            orb_coeffs[:, p] * orb_coeffs[:, q] * 
+                            orb_coeffs[:, r] * orb_coeffs[:, s])
+    else:
+        for i in range(n_mo):
+            UM[i, i, i, i] = U
+    
+    return UM
 
