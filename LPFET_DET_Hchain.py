@@ -21,6 +21,11 @@ import quantnbody.fermionic.tools as tools
 from scipy.linalg import eigh
 from scipy.sparse.linalg import eigsh
 from scipy.optimize import minimize
+import lpfet 
+
+
+
+
 
 # Set up plotting parameters
 plt.rc('font', family='serif', size=14)
@@ -61,65 +66,6 @@ options_optimizer = {"maxiter": 2000, "ftol": 1e-6}
 
 #%%
 # ============================================================================
-#                           UTILITY FUNCTIONS
-# ============================================================================
-
-def direct_sum(A, B):
-    """Compute the direct sum of two matrices."""
-    zero_A = np.zeros((A.shape[0], B.shape[1]))
-    zero_B = np.zeros((B.shape[0], A.shape[1]))
-    return np.block([[A, zero_A], [zero_B, B]])
-
-def switch_sites_matrix(M, new_impurity):
-    """Permute matrix to set new_impurity as site 0."""
-    M_permuted = M.copy()
-    M_permuted[:, [0, new_impurity]] = M_permuted[:, [new_impurity, 0]]
-    M_permuted[[0, new_impurity], :] = M_permuted[[new_impurity, 0], :]
-    return M_permuted
-
-def switch_sites_tensor4(M, new_impurity):
-    """Permute 4-tensor to set new_impurity as site 0."""
-    M_permuted = M.copy()
-    M_permuted[[0, new_impurity], :, :, :] = M_permuted[[new_impurity, 0], :, :, :]
-    M_permuted[:, [0, new_impurity], :, :] = M_permuted[:, [new_impurity, 0], :, :]
-    M_permuted[:, :, [0, new_impurity], :] = M_permuted[:, :, [new_impurity, 0], :]
-    M_permuted[:, :, :, [0, new_impurity]] = M_permuted[:, :, :, [new_impurity, 0]]
-    return M_permuted
-
-def switch_sites_vector(v, new_impurity):
-    """Permute vector to set new_impurity as element 0."""
-    v_permuted = v.copy()
-    v_permuted[0], v_permuted[new_impurity] = v_permuted[new_impurity], v_permuted[0]
-    return v_permuted
-
-def householder_orbitals(RDM, N_mo_cl):
-    """
-    Generate Householder-transformed orbitals for embedding.
-    
-    Parameters:
-    -----------
-    RDM : array
-        Reduced density matrix
-    N_mo_cl : int
-        Number of cluster orbitals
-        
-    Returns:
-    --------
-    array : Householder orbitals
-    """
-    P, v = tools.householder_transformation(RDM)
-    RDM_ht = P @ RDM @ P
-    RDM_ht_env = RDM_ht[N_mo_cl:, N_mo_cl:]
-    
-    # Separate occupied from virtual orbitals
-    occ_env, C_ht_env = scipy.linalg.eigh(RDM_ht_env)
-    C_ht = direct_sum(np.eye(N_mo_cl), np.fliplr(C_ht_env))
-    
-    # Transform back to original basis
-    return P @ C_ht
-
-#%%
-# ============================================================================
 #                           LPFET IMPLEMENTATION
 # ============================================================================
 
@@ -149,18 +95,18 @@ def norm_density_LPFET(params):
     
     for impurity_index in range(N_mo):
         # Permute Hamiltonian to set current site as impurity
-        h_permuted = switch_sites_matrix(h_OAO_vKS, impurity_index)
+        h_permuted = lpfet.switch_sites_matrix(h_OAO_vKS, impurity_index)
         
         # Solve KS equations
         epsil, C = scipy.linalg.eigh(h_permuted)
         RDM_OAO = C[:, :N_occ] @ C[:, :N_occ].T
         
         # Get Householder orbitals for embedding
-        C_ht = householder_orbitals(RDM_OAO, N_mo_cl)
+        C_ht = lpfet.householder_orbitals(RDM_OAO, N_mo_cl)
         
         # Permute integrals for current impurity
-        h_OAO_permuted = switch_sites_matrix(h_OAO, impurity_index)
-        g_OAO_permuted = switch_sites_tensor4(g_OAO, impurity_index)
+        h_OAO_permuted = lpfet.switch_sites_matrix(h_OAO, impurity_index)
+        g_OAO_permuted = lpfet.switch_sites_tensor4(g_OAO, impurity_index)
         
         # Transform to embedding basis
         h_Ht, g_Ht = tools.transform_1_2_body_tensors_in_new_basis(
@@ -231,11 +177,11 @@ def norm_density_DET(params_DET):
         RDM_KS_DET = C[:, :N_occ] @ C[:, :N_occ].T
         
         # Get embedding orbitals
-        C_ht_DET = householder_orbitals(RDM_KS_DET, N_mo_cl)
+        C_ht_DET = lpfet.householder_orbitals(RDM_KS_DET, N_mo_cl)
         
         # Permute integrals
-        h_permuted_DET = switch_sites_matrix(h_DET, impurity_index)
-        g_permuted_DET = switch_sites_tensor4(g_DET, impurity_index)
+        h_permuted_DET =lpfet.switch_sites_matrix(h_DET, impurity_index)
+        g_permuted_DET = lpfet.switch_sites_tensor4(g_DET, impurity_index)
         
         # Transform to embedding basis
         h_Ht_DET, g_Ht_DET = tools.transform_1_2_body_tensors_in_new_basis(
@@ -277,7 +223,7 @@ def calculate_LPFET_energy(v_Hxc, E_nuc):
     sum_site_energy = 0
     
     for impurity_index in range(N_mo):
-        h_permuted = switch_sites_matrix(h_OAO_vKS, impurity_index)
+        h_permuted = lpfet.switch_sites_matrix(h_OAO_vKS, impurity_index)
         epsil, C = scipy.linalg.eigh(h_permuted)
         RDM_OAO = C[:, :N_occ] @ C[:, :N_occ].T 
         
@@ -285,8 +231,8 @@ def calculate_LPFET_energy(v_Hxc, E_nuc):
         C_ht = householder_orbitals(RDM_OAO, N_mo_cl)
         
         # Transform integrals
-        h_OAO_permuted = switch_sites_matrix(h_OAO, impurity_index)
-        g_OAO_permuted = switch_sites_tensor4(g_OAO, impurity_index)
+        h_OAO_permuted = lpfet.switch_sites_matrix(h_OAO, impurity_index)
+        g_OAO_permuted = lpfet.switch_sites_tensor4(g_OAO, impurity_index)
         h_Ht, g_Ht = tools.transform_1_2_body_tensors_in_new_basis(
             h_OAO_permuted, g_OAO_permuted, C_ht
         )
@@ -327,13 +273,13 @@ def calculate_DET_energy(v_Hxc_DET, mu, E_nuc):
     sum_site_energy_DET = 0
     
     for impurity_index in range(N_mo):
-        h_KS_permuted_DET = switch_sites_matrix(h_KS_DET, impurity_index)
+        h_KS_permuted_DET = lpfet.switch_sites_matrix(h_KS_DET, impurity_index)
         epsil, C = scipy.linalg.eigh(h_KS_permuted_DET)
         RDM_KS_DET = C[:, :N_occ] @ C[:, :N_occ].T
         
-        C_ht_DET = householder_orbitals(RDM_KS_DET, N_mo_cl)
-        h_permuted_DET = switch_sites_matrix(h_DET, impurity_index)
-        g_permuted_DET = switch_sites_tensor4(g_DET, impurity_index)
+        C_ht_DET = lpfet.householder_orbitals(RDM_KS_DET, N_mo_cl)
+        h_permuted_DET = lpfet.switch_sites_matrix(h_DET, impurity_index)
+        g_permuted_DET = lpfet.switch_sites_tensor4(g_DET, impurity_index)
         h_Ht_DET, g_Ht_DET = tools.transform_1_2_body_tensors_in_new_basis(
             h_permuted_DET, g_permuted_DET, C_ht_DET
         )
