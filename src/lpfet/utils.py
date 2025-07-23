@@ -6,12 +6,17 @@ def direct_sum(A,B):
     dir_sum=np.block([[A,zero_matrix_A],[zero_matrix_B,B]])
     return(dir_sum)
 
-# Defining the switch_sites_matrix function
+# Defining the switch_site functions
+def switch_sites_vector(M, new_impurity):
+    M_permuted = M.copy()
+    M_permuted[0], M_permuted[new_impurity] = M_permuted[new_impurity], M_permuted[0]
+    return M_permuted
+
 def switch_sites_matrix(M, new_impurity):
     M_permuted = M.copy()
     M_permuted[:, [0, new_impurity]] = M_permuted[:, [new_impurity, 0]]
     M_permuted[[0, new_impurity], :] = M_permuted[[new_impurity, 0], :]
-    return M_permuted
+    return M_permuted 
 
 def switch_sites_tensor4(M, new_impurity):
     M_permuted = M.copy()
@@ -20,8 +25,6 @@ def switch_sites_tensor4(M, new_impurity):
     M_permuted[:,:,[0, new_impurity],:] = M_permuted[:,:,[new_impurity, 0],:]
     M_permuted[:,:,:,[0, new_impurity]] = M_permuted[:,:,:,[new_impurity, 0]]
     return M_permuted
-
-
 
 def u_matrix(n_mo, U, nearest_neighbor_interactions=False, alpha=0, delocalized_rep=False, orb_coeffs=None):
 
