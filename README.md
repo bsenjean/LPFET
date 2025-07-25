@@ -1,5 +1,9 @@
-# LPFET
-Local Potential Functional Embedding Theory
+# Local Potential Functional Embedding Theory (LPFET)
 
-# Installation
+**Installation**
+
 pip install -e .
+
+**Executation**
+
+The python executables are in the example folder.
