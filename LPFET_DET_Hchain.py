@@ -169,7 +169,7 @@ def norm_density_DET(params_DET):
     
     for impurity_index in range(N_mo):
         # Permute and solve KS equations
-        h_KS_permuted_DET = lpfet.witch_sites_matrix(h_KS_DET, impurity_index)
+        h_KS_permuted_DET = lpfet.switch_sites_matrix(h_KS_DET, impurity_index)
         epsil, C = scipy.linalg.eigh(h_KS_permuted_DET)
         RDM_KS_DET = C[:, :N_occ] @ C[:, :N_occ].T
         
