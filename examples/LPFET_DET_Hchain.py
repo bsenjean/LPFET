@@ -53,7 +53,7 @@ N_el_env = N_el - N_el_cl
 N_occ_env = N_el_env // 2
 
 # Distances to study (in Angstroms)
-distances = [0.2,0.4,0.6,0.7, 1.0, 1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2,2.5,3]# Representative distances for clarity
+distances = [0.2,0.4,0.6,0.7,1.0,1.2,1.4,1.6,1.8,2.0,2.5,3.0] # Representative distances for clarity
 
 # Build quantum many-body basis sets
 basis = tools.build_nbody_basis(N_mo, N_el)
@@ -329,7 +329,7 @@ def run_embedding_calculations():
     }
     
     print("Starting embedding calculations...")
-    print("=" * 50)
+    print("=" * 60)
     
     for R in distances:
         print(f"\nProcessing distance R = {R} Å")

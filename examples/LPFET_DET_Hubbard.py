@@ -21,6 +21,7 @@ import quantnbody.fermionic.tools as tools
 from scipy.linalg import eigh
 from scipy.sparse.linalg import eigsh
 from scipy.optimize import minimize
+import lpfet 
 
 # Set up plotting parameters
 plt.rc('font', family='serif', size=14)
@@ -335,7 +336,7 @@ def run_embedding_calculations():
     initial_guess_DET = np.zeros(N_mo + 1)
     
     print("Starting embedding calculations...")
-    print("=" * 50)
+    print("=" * 39)
     
     for U in U_list:
         U_current = U

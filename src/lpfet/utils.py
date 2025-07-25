@@ -1,3 +1,6 @@
+import numpy as np
+import scipy
+import quantnbody as qnb
 
 def direct_sum(A,B):
     zero_matrix_A=np.zeros((A.shape[0],B.shape[1]))
@@ -40,7 +43,7 @@ def householder_orbitals(RDM, N_mo_cl):
     --------
     array : Householder orbitals
     """
-    P, v = tools.householder_transformation(RDM)
+    P, v = qnb.fermionic.tools.householder_transformation(RDM)
     RDM_ht = P @ RDM @ P
     RDM_ht_env = RDM_ht[N_mo_cl:, N_mo_cl:]
     
