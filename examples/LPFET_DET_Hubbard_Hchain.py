@@ -51,6 +51,9 @@ N_el_env = N_el - N_el_cl
 N_occ_env = N_el_env // 2
 
 system_list = ['Hubbard','Hchain']
+# Hubbard options on periodicity and width
+periodic = False
+width = 2 # for 1D, width = 1, for 2D, width = nbr of row. Length = N_mo // width
 
 # Build quantum many-body basis sets
 basis = tools.build_nbody_basis(N_mo, N_el)
@@ -196,10 +199,12 @@ def run_embedding_calculations():
         # Generate geometry and get integrals
 
         if system == 'Hubbard':
-          t = [1, 1, 1, 1, 1, 1]     # Hopping parameters
-          v_ext = 1                   # External potential strength
-          v_ext_array = np.array([-v_ext, 2*v_ext, -2*v_ext, 3*v_ext, -3*v_ext, v_ext])
-          h = lpfet.h_matrix(N_mo, N_el, t, v_ext_array, configuration="ring")
+          length = N_mo // width
+          t = 1 # Hopping parameters
+          v_ext = 1 # External potential strength
+          if width == 1: v_ext_array = np.array([-v_ext, 2*v_ext, -2*v_ext, 3*v_ext, -3*v_ext, v_ext]) # Non-uniform system
+          if width == 2: v_ext_array = np.array([-v_ext, 2*v_ext, -2*v_ext, v_ext, -3*v_ext, 3*v_ext]) # Non-uniform system
+          h = lpfet.h_matrix(N_mo, N_el, t, v_ext_array, length, width, periodic)
           g = np.zeros((N_mo, N_mo, N_mo, N_mo))
           for i in range(N_mo):
             g[i, i, i, i] = var
@@ -404,8 +409,7 @@ if __name__ == "__main__":
 
     for system in system_list:
       if system == 'Hubbard':
-        #variables = np.linspace(0,40,20)
-        variables = [2.0,3.0,4.0,5.0,6.0,7.0,8.0]
+        variables = np.linspace(0,40,21)
       elif system == 'Hchain':
         variables = [0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0,1.2,1.5,2.0,2.5,3.0,3.1,3.2,3.3,3.4]
         #variables = [0.4,0.5,0.6,0.7,0.8,0.9,1.0,1.1,1.2,1.3,1.4]

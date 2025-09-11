@@ -1,4 +1,5 @@
 import numpy as np
+import sys
 import scipy
 import quantnbody as qnb
 
@@ -55,7 +56,7 @@ def householder_orbitals(RDM, N_mo_cl):
     return P @ C_ht
 
 
-def h_matrix(n_mo, n_elec, t, v, configuration="ring"):
+def h_matrix(n_mo, n_elec, t, v, length, width, periodic=False):
     """
     Build the one-body Hamiltonian matrix for the Hubbard model.
     
@@ -65,32 +66,49 @@ def h_matrix(n_mo, n_elec, t, v, configuration="ring"):
         Number of molecular orbitals
     n_elec : int
         Number of electrons
-    t : array
-        Hopping parameters
+    t : hopping parameter
     v : array
-        On-site potentials
-    configuration : str
-        "ring" or "line" geometry
+        On-site potentials.
+    length: size of the chain / ladder
+    width: width of the ladder
+    periodic: periodic or not
         
     Returns:
     --------
     array : One-body Hamiltonian matrix
     """
     tM = np.zeros((n_mo, n_mo))
-    
-    # Nearest neighbor hopping
-    for i in range(n_mo - 1):
-        tM[i, i + 1] = tM[i + 1, i] = -t[i]
-    
-    # Periodic boundary conditions for ring
-    if configuration == "ring":
-        if n_elec % 4 == 2:
-            tM[0, n_mo - 1] = tM[n_mo - 1, 0] = -t[-1]
-        elif n_elec % 4 == 0:
-            tM[0, n_mo - 1] = tM[n_mo - 1, 0] = t[-1]
-    
+
     # Add on-site potentials
     tM += np.diag(v)
+    
+    # Build a ladder for the hopping parameter:
+    #      LENGTH = 4
+    # 0 --- 1 --- 2 --- 3  W
+    # |     |     |     |  I
+    # 4 --- 5 --- 6 --- 7  D = 3
+    # |     |     |     |  T
+    # 8 --- 9 --- 10 -- 11 H   
+
+    # length-hopping:
+    for w in range(width): # width = 1 --> w = 0
+      for l in range(length - 1):
+        tM[w*length + l, w*length + l + 1] = tM[w*length + l + 1, w*length + l] = -t
+      if periodic: 
+        tM[w*length, (w+1)*length - 1] = tM[(w+1)*length - 1, w*length] = -t
+    # width-hopping:
+    if width > 1:
+      for l in range(length):
+        for w in range(width - 1): # width == 1 --> range(0) = nothing happens.
+          tM[w*length + l, (w+1)*length + l] = tM[(w+1)*length + l, w*length + l] = -t
+        if periodic:
+          tM[l, (width-1)*length + l] = tM[(width-1)*length + l, l] = -t
+    
+    # Antiperiodic boundary conditions for a ring
+    if periodic:
+        if n_elec % 4 == 0 and width==1:
+            tM[0, n_mo - 1] = tM[n_mo - 1, 0] = t
+    
     return tM
 
 def u_matrix(n_mo, U, delocalized_rep=False, orb_coeffs=None):
