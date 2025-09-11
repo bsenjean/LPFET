@@ -199,7 +199,7 @@ def run_embedding_calculations():
           t = [1, 1, 1, 1, 1, 1]     # Hopping parameters
           v_ext = 1                   # External potential strength
           v_ext_array = np.array([-v_ext, 2*v_ext, -2*v_ext, 3*v_ext, -3*v_ext, v_ext])
-          h = lpfet.h_matrix(N_mo, N_el, t, v_ext_array, configuration="ring")
+          h = lpfet.h_matrix_2D(N_mo, N_el, t, v_ext_array,link_params=[1,3], configuration="ring")
           g = np.zeros((N_mo, N_mo, N_mo, N_mo))
           for i in range(N_mo):
             g[i, i, i, i] = var
