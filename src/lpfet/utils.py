@@ -93,6 +93,86 @@ def h_matrix(n_mo, n_elec, t, v, configuration="ring"):
     tM += np.diag(v)
     return tM
 
+
+def h_matrix(n_mo, n_elec, t, v, configuration="ring"):
+    """
+    Build the one-body Hamiltonian matrix for the Hubbard model.
+    
+    Parameters:
+    -----------
+    n_mo : int
+        Number of molecular orbitals
+    n_elec : int
+        Number of electrons
+    t : array
+        Hopping parameters
+    v : array
+        On-site potentials
+    configuration : str
+        "ring" or "line" geometry
+        
+    Returns:
+    --------
+    array : One-body Hamiltonian matrix
+    """
+    tM = np.zeros((n_mo, n_mo))
+    
+    # Nearest neighbor hopping
+    for i in range(n_mo - 1):
+        tM[i, i + 1] = tM[i + 1, i] = -t[i]
+    
+    # Periodic boundary conditions for ring
+    if configuration == "ring":
+        if n_elec % 4 == 2:
+            tM[0, n_mo - 1] = tM[n_mo - 1, 0] = -t[-1]
+        elif n_elec % 4 == 0:
+            tM[0, n_mo - 1] = tM[n_mo - 1, 0] = t[-1]
+    
+    # Add on-site potentials
+    tM += np.diag(v)
+    return tM
+
+
+def h_matrix_2D(n_mo, n_elec, t, v, link_params=[0,1], configuration="ring", BLA_mode=False, alpha=0):
+    """
+    Build the one-body Hamiltonian matrix for the 2D Hubbard model.
+    
+    Parameters:
+    -----------
+    n_mo : int
+        Number of molecular orbitals
+    n_elec : int
+        Number of electrons
+    t : array
+        Hopping parameters
+    v : array
+        On-site potentials
+    configuration : str
+        "ring" or "line" geometry
+        
+    Returns:
+    --------
+    array : One-body Hamiltonian matrix
+    """
+    tM = np.zeros((n_mo, n_mo))
+    
+    # Nearest neighbor hopping
+    for i in range(n_mo - 1):
+        tM[i, i + 1] = tM[i + 1, i] = -t[i]
+    
+    # Periodic boundary conditions for ring
+    if configuration == "ring":
+        if n_elec % 4 == 2:
+            tM[0, n_mo - 1] = tM[n_mo - 1, 0] = -t[-1]
+        elif n_elec % 4 == 0:
+            tM[0, n_mo - 1] = tM[n_mo - 1, 0] = t[-1]
+    
+    # Add on-site potentials
+    tM += np.diag(v)
+    tM[link_params[0], link_params[1]] = tM[link_params[1], link_params[0]] = -1 * t[0]
+
+    return tM
+
 def u_matrix(n_mo, U, delocalized_rep=False, orb_coeffs=None):
     """
     Build the two-body interaction tensor.
