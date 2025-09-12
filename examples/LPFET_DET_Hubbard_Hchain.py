@@ -25,6 +25,32 @@ from scipy.optimize import minimize
 import lpfet 
 import psi4
 
+def generate_h_ladder_geometry(N_atoms, dist, R_H2 = 0.7):
+    """
+    A function to build a H2 ladder (H2 + H2 + H2 + ...)
+
+    Parameters
+    ----------
+    dist     : float
+        distance between two hydrogen dimer
+    R_H2     : float
+        distance between the hydrogen of a dimer (same for all dimers)
+
+    Returns
+    ----------
+    h_ladder_geometry : str
+        XYZ string encoding the geometry of the H2 ladder
+
+    """
+    h_ladder_geometry = 'H 0. 0. 0.'  # Define the position of the first hydrogen
+    h_ladder_geometry += '\nH {} 0. 0.'.format(R_H2)  # Define the position of the second hydrogen
+    for n in range(1, N_atoms//2):
+        h_ladder_geometry += '\nH 0. {} 0.'.format(n * dist)
+        h_ladder_geometry += '\nH {0} {1} 0.'.format(R_H2, n * dist)
+
+    return h_ladder_geometry
+
+
 # Set up plotting parameters
 plt.rc('font', family='serif', size=14)
 plt.rc('xtick', labelsize='x-large')
@@ -50,10 +76,7 @@ N_el_cl = 2                # Number of cluster electrons
 N_el_env = N_el - N_el_cl
 N_occ_env = N_el_env // 2
 
-system_list = ['Hubbard','Hchain']
-# Hubbard options on periodicity and width
-periodic = False
-width = 2 # for 1D, width = 1, for 2D, width = nbr of row. Length = N_mo // width
+system_list = ['Hubbard_1D','Hubbard_2D','Hchain','Hladder']
 
 # Build quantum many-body basis sets
 basis = tools.build_nbody_basis(N_mo, N_el)
@@ -198,18 +221,24 @@ def run_embedding_calculations():
         
         # Generate geometry and get integrals
 
-        if system == 'Hubbard':
+        if system == 'Hubbard_1D' or system == 'Hubbard_2D':
           length = N_mo // width
           t = 1 # Hopping parameters
           v_ext = 1 # External potential strength
-          if width == 1: v_ext_array = np.array([-v_ext, 2*v_ext, -2*v_ext, 3*v_ext, -3*v_ext, v_ext]) # Non-uniform system
-          if width == 2: v_ext_array = np.array([-v_ext, 2*v_ext, -2*v_ext, v_ext, -3*v_ext, 3*v_ext]) # Non-uniform system
+          if system == 'Hubbard_1D': 
+             width = 1
+             v_ext_array = np.array([-v_ext, 2*v_ext, -2*v_ext, 3*v_ext, -3*v_ext, v_ext]) # Non-uniform system
+          if system == 'Hubbard_2D': 
+             width = 2 # can be more !
+             v_ext_array = np.array([-v_ext, 2*v_ext, -2*v_ext, v_ext, -3*v_ext, 3*v_ext]) # Non-uniform system
           h = lpfet.h_matrix(N_mo, N_el, t, v_ext_array, length, width, periodic)
           g = np.zeros((N_mo, N_mo, N_mo, N_mo))
           for i in range(N_mo):
             g[i, i, i, i] = var
-        elif system == 'Hchain':
-          geometry = tools.generate_h_chain_geometry(N_mo, var)
+        elif system == 'Hchain' or system == 'Hladder':
+          if system == 'Hchain': geometry = tools.generate_h_chain_geometry(N_mo, var)
+          if system == 'Hladder': geometry = generate_h_ladder_geometry(N_mo, var, R_H2=1.5)
+          print(geometry)
           psi4.core.clean()
           psi4.core.clean_variables()
           psi4.core.clean_options()
@@ -242,7 +271,7 @@ def run_embedding_calculations():
         RDM_FCI = tools.build_1rdm_alpha(Psi_FCI[:, 0], a_dag_a)
         FCI_density = [RDM_FCI[i, i] for i in range(N_mo)]
         
-        if system == 'Hchain': E_FCI[0] += E_nuc
+        if system == 'Hchain' or system == 'Hladder': E_FCI[0] += E_nuc
         results['FCI_energies'].append(E_FCI[0])
         results['FCI_densities'].append(FCI_density)
         
@@ -252,10 +281,10 @@ def run_embedding_calculations():
         occ_KS = np.zeros(N_mo)
         
         #initial_guess_LPFET = np.zeros(N_mo)
-        if system == 'Hubbard': 
+        if system == 'Hubbard_1D' or system == 'Hubbard_2D': 
            initial_guess_LPFET = - np.diag(h)
            initial_guess_DET = np.zeros(N_mo + 1)  # +1 for chemical potential
-        if system == 'Hchain':
+        if system == 'Hchain' or system == 'Hladder':
            initial_guess_LPFET = np.zeros(N_mo)
            initial_guess_DET = np.zeros(N_mo + 1)  # +1 for chemical potential
 
@@ -271,11 +300,12 @@ def run_embedding_calculations():
                                                 minimizer_kwargs={'method': opt_method})
 
         print(result_LPFET)
-        print("cluster:",occ_cluster)
-        print("KS:",occ_KS)
+        print("Occupation FCI:",FCI_density)
+        print("Occupation cluster:",occ_cluster)
+        print("Occupation KS:",occ_KS)
         v_Hxc = result_LPFET['x']
         E_LPFET = sum_site_energy
-        if system == 'Hchain': E_LPFET += E_nuc
+        if system == 'Hchain' or system == 'Hladder': E_LPFET += E_nuc
         results['LPFET_energies'].append(E_LPFET)
         results['LPFET_densities'].append(occ_cluster.copy())
         results['LPFET_potentials'].append(v_Hxc.copy())
@@ -296,12 +326,13 @@ def run_embedding_calculations():
                                                 minimizer_kwargs={'method': opt_method})
 
         print(result_DET)
-        print("cluster:",occ_cluster)
-        print("KS:",occ_KS)
+        print("Occupation FCI:",FCI_density)
+        print("Occupation cluster:",occ_cluster)
+        print("Occupation KS:",occ_KS)
         v_Hxc_DET = result_DET.x[:-1]
         mu_DET = result_DET.x[-1]
         E_DET = sum_site_energy
-        if system == 'Hchain': E_DET += E_nuc
+        if system == 'Hchain' or system == 'Hladder': E_DET += E_nuc
         results['DET_energies'].append(E_DET)
         results['DET_densities'].append(occ_cluster.copy())
         results['DET_potentials'].append(v_Hxc_DET.copy())
@@ -333,10 +364,10 @@ def plot_energy_comparison(results):
              label="DET", color='red', linestyle='--', marker='^', 
              linewidth=2, markersize=6)
     
-    if system=='Hubbard':
+    if system=='Hubbard_1D' or system=='Hubbard_2D':
       x = '$U/t$'
       y = 'Energy/$t$'
-    elif system=='Hchain':
+    elif system=='Hchain' or system=='Hladder':
       x = 'Bond distance [\\AA]'
       y = 'Energy [hartree]'
     
@@ -365,11 +396,11 @@ def plot_individual_densities(results):
                 ls="-.", label="DET", color='red', marker='s', 
                 linewidth=2, markersize=6)
         
-        if system=='Hubbard':
+        if system=='Hubbard_1D' or system=='Hubbard_2D':
           x = 'Site'
           y = 'Density per spin'
           title = '$U/t$ = {}'.format(var)
-        elif system=='Hchain':
+        elif system=='Hchain' or system=='Hladder':
           x = 'OAO Index'
           y = 'Density per spin'
           title = '$R$ = {} \\AA'.format(var)
@@ -408,11 +439,10 @@ def plot_results(results):
 if __name__ == "__main__":
 
     for system in system_list:
-      if system == 'Hubbard':
-        variables = np.linspace(0,40,21)
-      elif system == 'Hchain':
-        variables = [0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0,1.2,1.5,2.0,2.5,3.0,3.1,3.2,3.3,3.4]
-        #variables = [0.4,0.5,0.6,0.7,0.8,0.9,1.0,1.1,1.2,1.3,1.4]
+      if system == 'Hubbard_1D' or system == 'Hubbard_2D':
+        variables = np.linspace(0,10,11)
+      elif system == 'Hchain' or system == 'Hladder':
+        variables = np.linspace(0,3.0,11)
 
 
       print("Quantum Embedding Methods: LPFET vs DET for {}".format(system))
