@@ -226,9 +226,11 @@ def run_embedding_calculations():
           t = 1 # Hopping parameters
           v_ext = 1 # External potential strength
           if system == 'Hubbard_1D': 
+             periodic = True
              width = 1
              v_ext_array = np.array([-v_ext, 2*v_ext, -2*v_ext, 3*v_ext, -3*v_ext, v_ext]) # Non-uniform system
           if system == 'Hubbard_2D': 
+             periodic = False
              width = 2 # can be more !
              v_ext_array = np.array([-v_ext, 2*v_ext, -2*v_ext, v_ext, -3*v_ext, 3*v_ext]) # Non-uniform system
           h = lpfet.h_matrix(N_mo, N_el, t, v_ext_array, length, width, periodic)
