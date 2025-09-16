@@ -444,7 +444,7 @@ if __name__ == "__main__":
       if system == 'Hubbard_1D' or system == 'Hubbard_2D':
         variables = np.linspace(0,10,11)
       elif system == 'Hchain' or system == 'Hladder':
-        variables = np.linspace(0,3.0,11)
+        variables = np.linspace(0.5,3.0,11)
 
 
       print("Quantum Embedding Methods: LPFET vs DET for {}".format(system))
