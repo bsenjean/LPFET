@@ -222,16 +222,17 @@ def run_embedding_calculations():
         # Generate geometry and get integrals
 
         if system == 'Hubbard_1D' or system == 'Hubbard_2D':
-          length = N_mo // width
           t = 1 # Hopping parameters
           v_ext = 1 # External potential strength
           if system == 'Hubbard_1D': 
              periodic = True
              width = 1
+             length = N_mo // width
              v_ext_array = np.array([-v_ext, 2*v_ext, -2*v_ext, 3*v_ext, -3*v_ext, v_ext]) # Non-uniform system
           if system == 'Hubbard_2D': 
              periodic = False
              width = 2 # can be more !
+             length = N_mo // width
              v_ext_array = np.array([-v_ext, 2*v_ext, -2*v_ext, v_ext, -3*v_ext, 3*v_ext]) # Non-uniform system
           h = lpfet.h_matrix(N_mo, N_el, t, v_ext_array, length, width, periodic)
           g = np.zeros((N_mo, N_mo, N_mo, N_mo))
