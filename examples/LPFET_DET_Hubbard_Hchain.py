@@ -11,7 +11,7 @@ For linear hydrogen chains at different interatomic variables using quantum chem
 
 
 """
-
+#%%
 import numpy as np
 import os, sys
 import scipy
@@ -76,11 +76,12 @@ N_el_cl = 2                # Number of cluster electrons
 N_el_env = N_el - N_el_cl
 N_occ_env = N_el_env // 2
 
-system_list = ['Hubbard_1D','Hubbard_2D','Hchain','Hladder']
-system_list = ['Hchain']
+# system_list = ['Hubbard_1D','Hubbard_2D','Hchain','Hladder']
+system_list = ['Hubbard_1D','Hchain']
+               
+               
 # exact_exchange:
-EXX = True
-option = 6
+EXX = True 
 
 # Build quantum many-body basis sets
 basis = tools.build_nbody_basis(N_mo, N_el)
@@ -127,49 +128,114 @@ def norm_density(params, exact_exchange=False):
 
     h_KS = h + np.diag(corr_pot)
     if exact_exchange: 
-      if option==1:
-      # we add v_Hx from Hartree-Fock, with 1RDM obtained from h
-        h_KS = h + 2*J0 - K0 + np.diag(corr_pot)
-      if option == 2:
-      # we add v_Hx from Hartree-Fock, with 1RDM obtained from h + corr_pot
-        epsil, C = scipy.linalg.eigh(h_KS)
-        RDM = C[:, :N_occ] @ C[:, :N_occ].T
-        J = np.einsum('pqrs,rs->pq', g, RDM)
-        K = np.einsum('prqs,rs->pq', g, RDM)
-        h_KS = h + 2*J - K + np.diag(corr_pot)
-      if option == 3:
-      # we add v_Hx with 1RDM obtained from F = h + 2J - K with J and K computed with the 1RDM of h. (It's like 1 iteration of HF)
-        F = h + 2*J0 - K0
-        epsil, C = scipy.linalg.eigh(F)
-        RDM = C[:, :N_occ] @ C[:, :N_occ].T
-        J = np.einsum('pqrs,rs->pq', g, RDM)
-        K = np.einsum('prqs,rs->pq', g, RDM)
-        h_KS = h + 2*J - K + np.diag(corr_pot)
-      if option == 4:
-      # we add v_Hx with 1RDM obtained from F = h + 2J - K + v, with J and K computed with the 1RDM of h + v. (It's like 1 iteration of HF but with corr_pot ?)
-        epsil, C = scipy.linalg.eigh(h_KS)
-        RDM = C[:, :N_occ] @ C[:, :N_occ].T
-        J = np.einsum('pqrs,rs->pq', g, RDM)
-        K = np.einsum('prqs,rs->pq', g, RDM)
-        F = h + 2*J - K + np.diag(corr_pot)
-        epsil, C = scipy.linalg.eigh(F)
-        RDM = C[:, :N_occ] @ C[:, :N_occ].T
-        J = np.einsum('pqrs,rs->pq', g, RDM)
-        K = np.einsum('prqs,rs->pq', g, RDM)
-        h_KS = h + 2*J - K + np.diag(corr_pot)
-      if option == 5:
-      # we add v_Hx with 1RDM obtained from F = h + 2J - K + v, with J and K computed with the 1RDM of F of the previous iteration.
-        F = h + 2*J0 - K0 + np.diag(corr_pot)
-        epsil, C = scipy.linalg.eigh(F)
-        RDM = C[:, :N_occ] @ C[:, :N_occ].T
-        J = np.einsum('pqrs,rs->pq', g, RDM)
-        K = np.einsum('prqs,rs->pq', g, RDM)
-        J0 = J
-        K0 = K
-        h_KS = h + 2*J - K + np.diag(corr_pot)
-      if option == 6:
-      # we add v_Hx with 1RDM obtained from Hartree-Fock (converged)
-        h_KS = h + 2*J_HF - K_HF + np.diag(corr_pot)
+      # we add v_Hx with 1RDM obtained from Hartree-Fock (converged) with DIIS acceleration
+        # Run DIIS-accelerated SCF with correlation potential included
+        h_with_corr = h + np.diag(corr_pot)
+        
+        # SCF convergence parameters
+        max_scf_iter = 50
+        E_conv = 1e-8
+        D_conv = 1e-6
+        
+        # Initial guess for density matrix
+        if  system == 'Hubbard_1D':
+            D_scf = RDM0
+        elif system== 'Hchain':
+            # Use core Hamiltonian guess
+            D_scf= RDM_HF.copy()
+        
+        # DIIS storage
+        Fock_list = []
+        DIIS_error = []
+        E_old = 0.0
+        
+        # SCF iteration loop with DIIS
+        for scf_iter in range(1, max_scf_iter + 1):
+            # Build Fock matrix
+            J_scf = np.einsum('pqrs,rs->pq', g, D_scf)
+            K_scf = np.einsum('prqs,rs->pq', g, D_scf)
+            F_scf = h_with_corr + 2*J_scf - K_scf
+            
+            
+            if  system == 'Hubbard_1D':
+              n_i = np.diag(D_scf) 
+              E_scf = np.einsum('ij,ij->', h, D_scf) + 0.5 * np.sum(U * n_i * n_i)
+            elif system== 'Hchain':
+              E_scf = np.einsum('pq,pq->', h+ F_scf, D_scf)
+            
+            
+            # DIIS error: FDS - SDF in orthogonal basis
+            # For simplicity, use F*D - D*F as error metric
+            diis_e = F_scf @ D_scf - D_scf @ F_scf
+            
+            # Store Fock matrix and error for DIIS
+            Fock_list.append(F_scf.copy())
+            DIIS_error.append(diis_e.copy())
+            
+            # Calculate RMS of DIIS error
+            dRMS = np.sqrt(np.mean(diis_e**2))
+            
+            # Check convergence
+            if scf_iter > 1 and abs(E_scf - E_old) < E_conv and dRMS < D_conv:
+                break
+            
+            E_old = E_scf
+            
+            # Apply DIIS if we have at least 2 iterations
+            if scf_iter >= 2:
+                # Limit DIIS vector size
+                diis_count = len(Fock_list)
+                if diis_count > 6:
+                    del Fock_list[0]
+                    del DIIS_error[0]
+                    diis_count -= 1
+                
+                # Build error matrix B
+                B = np.zeros((diis_count + 1, diis_count + 1))
+                B[-1, :] = -1
+                B[:, -1] = -1
+                B[-1, -1] = 0
+                
+                for i, e1 in enumerate(DIIS_error):
+                    for j, e2 in enumerate(DIIS_error):
+                        if j > i: continue
+                        val = np.einsum('ij,ij->', e1, e2)
+                        B[i, j] = val
+                        B[j, i] = val
+                
+                # Normalize B matrix
+                if np.abs(B[:-1, :-1]).max() > 0:
+                    B[:-1, :-1] /= np.abs(B[:-1, :-1]).max()
+                
+                # Build residual vector
+                resid = np.zeros(diis_count + 1)
+                resid[-1] = -1
+                
+                try:
+                    # Solve DIIS equations
+                    ci = np.linalg.solve(B, resid)
+                    
+                    # Build DIIS Fock matrix
+                    F_scf = np.zeros_like(F_scf)
+                    for i, c in enumerate(ci[:-1]):
+                        F_scf += c * Fock_list[i]
+                except np.linalg.LinAlgError:
+                    # If DIIS fails, use latest Fock matrix
+                    F_scf = Fock_list[-1]
+            
+            # Diagonalize Fock matrix and update density
+            epsil_scf, C_scf = scipy.linalg.eigh(F_scf)
+            D_scf = C_scf[:, :N_occ] @ C_scf[:, :N_occ].T
+        
+        # Store density for next optimization step
+        D_scf_prev = D_scf.copy()
+        
+        # Final J and K from converged density
+        J_scf_final = np.einsum('pqrs,rs->pq', g, D_scf)
+        K_scf_final = np.einsum('prqs,rs->pq', g, D_scf)
+        
+        # Use converged Hartree-Fock result
+        h_KS = h + 2*J_scf_final - K_scf_final + np.diag(corr_pot)
 
     sum_site_energy = 0
     for impurity_index in range(N_mo):
@@ -248,8 +314,8 @@ def run_embedding_calculations():
     """
     Main function to run LPFET and DET calculations for all variables
     """
-    global occ_cluster, occ_KS, sum_site_energy
-    global h, g, J0, K0, J_HF, K_HF, iteration
+    global occ_cluster, occ_KS, sum_site_energy, U
+    global h, g, J0, K0, J_HF, K_HF, iteration, RDM_HF, RDM0
     
     # Storage for results
     results = {
@@ -257,12 +323,14 @@ def run_embedding_calculations():
         'FCI_densities': [],
         'LPFET_energies': [],
         'LPFET_densities': [],
+        'LPFET_KS_densities': [], 
         'LPFET_energies_it0': [],
         'LPFET_densities_it0': [],
         'LPFET_potentials': [],
         'LPFET_conv': [],
         'DET_energies': [],
         'DET_densities': [],
+        'DET_KS_densities':[],
         'DET_energies_it0': [],
         'DET_densities_it0': [],
         'DET_potentials': [],
@@ -276,7 +344,7 @@ def run_embedding_calculations():
     for var in variables:
         print(f"\nProcessing {system} with variable = {var}")
         print("-" * 30)
-        
+        U=var  # Correlation strength for Hubbard
         # Generate geometry and get integrals
 
         if system == 'Hubbard_1D' or system == 'Hubbard_2D':
@@ -296,6 +364,12 @@ def run_embedding_calculations():
           g = np.zeros((N_mo, N_mo, N_mo, N_mo))
           for i in range(N_mo):
             g[i, i, i, i] = var
+            
+          epsil, C = scipy.linalg.eigh(h)
+          RDM0 = C[:, :N_occ] @ C[:, :N_occ].T
+          J0 = np.einsum('pqrs,rs->pq', g, RDM0)
+          K0 = np.einsum('prqs,rs->pq', g, RDM0)
+          iteration = 0
         elif system == 'Hchain' or system == 'Hladder':
           if system == 'Hchain': geometry = tools.generate_h_chain_geometry(N_mo, var)
           if system == 'Hladder': geometry = generate_h_ladder_geometry(N_mo, var, R_H2=1.5)
@@ -338,11 +412,6 @@ def run_embedding_calculations():
           RDM_HF = C[:, :N_occ] @ C[:, :N_occ].T
           J_HF = np.einsum('pqrs,rs->pq', g, RDM_HF)
           K_HF = np.einsum('prqs,rs->pq', g, RDM_HF)
-
-          print("RDM0:")
-          print(RDM0)
-          print("RDM_HF:")
-          print(RDM_HF)
         
         # FCI reference calculation
         print("Computing FCI reference...")
@@ -388,6 +457,7 @@ def run_embedding_calculations():
         if system == 'Hchain' or system == 'Hladder': E_LPFET += E_nuc
         results['LPFET_energies'].append(E_LPFET)
         results['LPFET_densities'].append(occ_cluster.copy())
+        results['LPFET_KS_densities'].append(occ_KS.copy())
         results['LPFET_energies_it0'].append(sum_site_energy_0)
         results['LPFET_densities_it0'].append(occ_cluster_0.copy())
         results['LPFET_potentials'].append(corr_pot.copy())
@@ -417,6 +487,7 @@ def run_embedding_calculations():
         if system == 'Hchain' or system == 'Hladder': E_DET += E_nuc
         results['DET_energies'].append(E_DET)
         results['DET_densities'].append(occ_cluster.copy())
+        results['DET_KS_densities'].append(occ_KS.copy())
         results['DET_energies_it0'].append(sum_site_energy_0)
         results['DET_densities_it0'].append(occ_cluster_0.copy())
         results['DET_potentials'].append(corr_pot_DET.copy())
@@ -463,7 +534,7 @@ def plot_energy_comparison(results):
     plt.yticks(fontsize=25)
     
     plt.tight_layout()
-    plt.savefig("energy_"+system+"_EXX"+str(EXX)+"_option"+str(option)+".pdf", dpi=300, bbox_inches='tight')
+    # plt.savefig("energy_"+system+"_EXX"+str(EXX)+"_option"+str(option)+".pdf", dpi=300, bbox_inches='tight')
     plt.show()
 
 def plot_individual_densities(results):
@@ -499,8 +570,9 @@ def plot_individual_densities(results):
         #plt.gca().yaxis.set_major_formatter(ticker.FormatStrFormatter('%.3f'))
         
         plt.tight_layout()
-        plt.savefig(f"density_"+system+f"{var:.2f}_EXX"+str(EXX)+"_option"+str(option)+".pdf", dpi=300, bbox_inches='tight')
+        # plt.savefig(f"density_"+system+f"{var:.2f}_EXX"+str(EXX)+"_option"+str(option)+".pdf", dpi=300, bbox_inches='tight')
         plt.show()
+        
 
 def plot_results(results):
     """Create all plots."""
@@ -515,19 +587,18 @@ def plot_results(results):
     
     print("All plots created successfully!")
 
-#%%
-# ============================================================================
-#                           RUN CALCULATIONS
-# ============================================================================
+# #%%
+# # ============================================================================
+# #                           RUN CALCULATIONS
+# # ============================================================================
 
 if __name__ == "__main__":
 
     for system in system_list:
       if system == 'Hubbard_1D' or system == 'Hubbard_2D':
-        variables = np.linspace(0,10,11)
+        variables = np.linspace(0,20,20)
       elif system == 'Hchain' or system == 'Hladder':
-        variables = np.linspace(0.5,2.0,7)
-        variables = [0.9,1.5,2.0]
+        variables = np.linspace(0.5,5,10)
 
       print("Quantum Embedding Methods: LPFET vs DET for {}".format(system))
       print("============================================================")
@@ -565,4 +636,4 @@ if __name__ == "__main__":
       
       print("\nCalculations completed successfully!")
       print("Plots saved as PDF files in current directory.")
-# %%
+
