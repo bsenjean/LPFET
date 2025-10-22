@@ -60,6 +60,136 @@ plt.rcParams.update({"text.usetex": True})
 
 #%%
 # ============================================================================
+#                           HF_SCF WITH DIIS PARAMETERS
+# ============================================================================
+
+def scf_with_exact_exchange(h, g, corr_pot, RDM0=None):
+    """
+    Self-consistent field calculation with exact exchange and DIIS acceleration
+    
+    Parameters:
+    -----------
+    h : array
+        One-electron Hamiltonian matrix
+    g : array  
+        Two-electron integrals
+    corr_pot : array
+        Correlation potential to be added to the Hamiltonian
+    RDM0 : array, optional
+        Initial density matrix 
+        
+    Returns:
+    --------
+    h_KS : array
+        Final Kohn-Sham Hamiltonian with exact exchange
+    """
+    
+    global N_occ
+    
+    # Add correlation potential to base Hamiltonian
+    h_with_corr = h + np.diag(corr_pot)
+    
+    # SCF convergence parameters
+    max_scf_iter = 50
+    E_conv = 1e-8
+    D_conv = 1e-6
+    
+    # Initial guess for density matrix
+    D_scf = RDM0.copy()
+
+    # DIIS storage
+    Fock_list = []
+    DIIS_error = []
+    E_old = 0.0
+    converged = False
+    
+    # SCF iteration loop with DIIS
+    for scf_iter in range(1, max_scf_iter + 1):
+        # Build Fock matrix
+        J_scf = np.einsum('pqrs,rs->pq', g, D_scf)
+        K_scf = np.einsum('prqs,rs->pq', g, D_scf)
+        F_scf = h_with_corr + 2*J_scf - K_scf
+        
+        # Calculate SCF energy
+        
+        E_scf = np.einsum('pq,pq->', h + F_scf, D_scf)
+        
+        # DIIS error: F*D - D*F
+        diis_e = F_scf @ D_scf - D_scf @ F_scf
+        
+        # Store Fock matrix and error for DIIS
+        Fock_list.append(F_scf.copy())
+        DIIS_error.append(diis_e.copy())
+        
+        # Calculate RMS of DIIS error
+        dRMS = np.sqrt(np.mean(diis_e**2))
+        
+        # Check convergence
+        if scf_iter > 1 and abs(E_scf - E_old) < E_conv and dRMS < D_conv:
+            converged = True
+            break
+        
+        E_old = E_scf
+        
+        # Apply DIIS if we have at least 2 iterations
+        if scf_iter >= 2:
+            # Limit DIIS vector size
+            diis_count = len(Fock_list)
+            if diis_count > 6:
+                del Fock_list[0]
+                del DIIS_error[0]
+                diis_count -= 1
+            
+            # Build error matrix B
+            B = np.zeros((diis_count + 1, diis_count + 1))
+            B[-1, :] = -1
+            B[:, -1] = -1
+            B[-1, -1] = 0
+            
+            for i, e1 in enumerate(DIIS_error):
+                for j, e2 in enumerate(DIIS_error):
+                    if j > i: continue
+                    val = np.einsum('ij,ij->', e1, e2)
+                    B[i, j] = val
+                    B[j, i] = val
+            
+            # Normalize B matrix
+            if np.abs(B[:-1, :-1]).max() > 0:
+                B[:-1, :-1] /= np.abs(B[:-1, :-1]).max()
+            
+            # Build residual vector
+            resid = np.zeros(diis_count + 1)
+            resid[-1] = -1
+            
+            try:
+                # Solve DIIS equations
+                ci = np.linalg.solve(B, resid)
+                
+                # Build DIIS Fock matrix
+                F_scf = np.zeros_like(F_scf)
+                for i, c in enumerate(ci[:-1]):
+                    F_scf += c * Fock_list[i]
+            except np.linalg.LinAlgError:
+                # If DIIS fails, use latest Fock matrix
+                F_scf = Fock_list[-1]
+        
+        # Diagonalize Fock matrix and update density
+        epsil_scf, C_scf = scipy.linalg.eigh(F_scf)
+        D_scf = C_scf[:, :N_occ] @ C_scf[:, :N_occ].T
+    
+    # Final J and K from converged density
+    J_scf_final = np.einsum('pqrs,rs->pq', g, D_scf)
+    K_scf_final = np.einsum('prqs,rs->pq', g, D_scf)
+    
+    # Final Kohn-Sham Hamiltonian with exact exchange
+    h_KS = h + 2*J_scf_final - K_scf_final + np.diag(corr_pot)
+
+    return h_KS
+
+
+
+#%%
+# ============================================================================
 #                           SYSTEM PARAMETERS
 # ============================================================================
 
@@ -76,8 +206,8 @@ N_el_cl = 2                # Number of cluster electrons
 N_el_env = N_el - N_el_cl
 N_occ_env = N_el_env // 2
 
-# system_list = ['Hubbard_1D','Hubbard_2D','Hchain','Hladder']
-system_list = ['Hubbard_1D','Hchain']
+system_list = ['Hubbard_1D','Hubbard_2D','Hchain','Hladder']
+# system_list = ['Hubbard_1D','Hchain']
                
                
 # exact_exchange:
@@ -126,117 +256,9 @@ def norm_density(params, exact_exchange=False):
     # DET
        corr_pot = params.copy()[:-1]
 
-    h_KS = h + np.diag(corr_pot)
     if exact_exchange: 
-      # we add v_Hx with 1RDM obtained from Hartree-Fock (converged) with DIIS acceleration
-        # Run DIIS-accelerated SCF with correlation potential included
-        h_with_corr = h + np.diag(corr_pot)
-        
-        # SCF convergence parameters
-        max_scf_iter = 50
-        E_conv = 1e-8
-        D_conv = 1e-6
-        
-        # Initial guess for density matrix
-        if  system == 'Hubbard_1D':
-            D_scf = RDM0
-        elif system== 'Hchain':
-            # Use core Hamiltonian guess
-            D_scf= RDM_HF.copy()
-        
-        # DIIS storage
-        Fock_list = []
-        DIIS_error = []
-        E_old = 0.0
-        
-        # SCF iteration loop with DIIS
-        for scf_iter in range(1, max_scf_iter + 1):
-            # Build Fock matrix
-            J_scf = np.einsum('pqrs,rs->pq', g, D_scf)
-            K_scf = np.einsum('prqs,rs->pq', g, D_scf)
-            F_scf = h_with_corr + 2*J_scf - K_scf
-            
-            
-            if  system == 'Hubbard_1D':
-              n_i = np.diag(D_scf) 
-              E_scf = np.einsum('ij,ij->', h, D_scf) + 0.5 * np.sum(U * n_i * n_i)
-            elif system== 'Hchain':
-              E_scf = np.einsum('pq,pq->', h+ F_scf, D_scf)
-            
-            
-            # DIIS error: FDS - SDF in orthogonal basis
-            # For simplicity, use F*D - D*F as error metric
-            diis_e = F_scf @ D_scf - D_scf @ F_scf
-            
-            # Store Fock matrix and error for DIIS
-            Fock_list.append(F_scf.copy())
-            DIIS_error.append(diis_e.copy())
-            
-            # Calculate RMS of DIIS error
-            dRMS = np.sqrt(np.mean(diis_e**2))
-            
-            # Check convergence
-            if scf_iter > 1 and abs(E_scf - E_old) < E_conv and dRMS < D_conv:
-                break
-            
-            E_old = E_scf
-            
-            # Apply DIIS if we have at least 2 iterations
-            if scf_iter >= 2:
-                # Limit DIIS vector size
-                diis_count = len(Fock_list)
-                if diis_count > 6:
-                    del Fock_list[0]
-                    del DIIS_error[0]
-                    diis_count -= 1
-                
-                # Build error matrix B
-                B = np.zeros((diis_count + 1, diis_count + 1))
-                B[-1, :] = -1
-                B[:, -1] = -1
-                B[-1, -1] = 0
-                
-                for i, e1 in enumerate(DIIS_error):
-                    for j, e2 in enumerate(DIIS_error):
-                        if j > i: continue
-                        val = np.einsum('ij,ij->', e1, e2)
-                        B[i, j] = val
-                        B[j, i] = val
-                
-                # Normalize B matrix
-                if np.abs(B[:-1, :-1]).max() > 0:
-                    B[:-1, :-1] /= np.abs(B[:-1, :-1]).max()
-                
-                # Build residual vector
-                resid = np.zeros(diis_count + 1)
-                resid[-1] = -1
-                
-                try:
-                    # Solve DIIS equations
-                    ci = np.linalg.solve(B, resid)
-                    
-                    # Build DIIS Fock matrix
-                    F_scf = np.zeros_like(F_scf)
-                    for i, c in enumerate(ci[:-1]):
-                        F_scf += c * Fock_list[i]
-                except np.linalg.LinAlgError:
-                    # If DIIS fails, use latest Fock matrix
-                    F_scf = Fock_list[-1]
-            
-            # Diagonalize Fock matrix and update density
-            epsil_scf, C_scf = scipy.linalg.eigh(F_scf)
-            D_scf = C_scf[:, :N_occ] @ C_scf[:, :N_occ].T
-        
-        # Store density for next optimization step
-        D_scf_prev = D_scf.copy()
-        
-        # Final J and K from converged density
-        J_scf_final = np.einsum('pqrs,rs->pq', g, D_scf)
-        K_scf_final = np.einsum('prqs,rs->pq', g, D_scf)
-        
-        # Use converged Hartree-Fock result
-        h_KS = h + 2*J_scf_final - K_scf_final + np.diag(corr_pot)
-
+        h_KS = scf_with_exact_exchange(h, g, corr_pot, RDM0=RDM0)
+      
     sum_site_energy = 0
     for impurity_index in range(N_mo):
         # Permute Hamiltonian to set current site as impurity
@@ -315,7 +337,7 @@ def run_embedding_calculations():
     Main function to run LPFET and DET calculations for all variables
     """
     global occ_cluster, occ_KS, sum_site_energy, U
-    global h, g, J0, K0, J_HF, K_HF, iteration, RDM_HF, RDM0
+    global h, g, J0, K0, J_HF, K_HF, iteration, RDM0
     
     # Storage for results
     results = {
@@ -398,10 +420,10 @@ def run_embedding_calculations():
           h, g = tools.transform_1_2_body_tensors_in_new_basis(
               h_AO, g_AO, S_half
           )
-          epsil, C = scipy.linalg.eigh(h)
-          RDM0 = C[:, :N_occ] @ C[:, :N_occ].T
-          J0 = np.einsum('pqrs,rs->pq', g, RDM0)
-          K0 = np.einsum('prqs,rs->pq', g, RDM0)
+        #   epsil, C = scipy.linalg.eigh(h)
+        #   RDM0 = C[:, :N_occ] @ C[:, :N_occ].T
+        #   J0 = np.einsum('pqrs,rs->pq', g, RDM0)
+        #   K0 = np.einsum('prqs,rs->pq', g, RDM0)
           iteration = 0
 
           psi4.set_options({'basis' : 'sto-3g'})
@@ -409,10 +431,10 @@ def run_embedding_calculations():
           F_HF_AO = scf_wfn.Fa().np
           F_HF_OAO = S_half @ F_HF_AO @ S_half
           epsil, C = scipy.linalg.eigh(F_HF_OAO)
-          RDM_HF = C[:, :N_occ] @ C[:, :N_occ].T
-          J_HF = np.einsum('pqrs,rs->pq', g, RDM_HF)
-          K_HF = np.einsum('prqs,rs->pq', g, RDM_HF)
-        
+          RDM0 = C[:, :N_occ] @ C[:, :N_occ].T
+          J_HF = np.einsum('pqrs,rs->pq', g, RDM0)
+          K_HF = np.einsum('prqs,rs->pq', g, RDM0)
+
         # FCI reference calculation
         print("Computing FCI reference...")
         H_ref = tools.build_hamiltonian_quantum_chemistry(h, g, basis, a_dag_a)
@@ -576,8 +598,6 @@ def plot_individual_densities(results):
 
 def plot_results(results):
     """Create all plots."""
-    # print("Creating density comparison plots...")
-    # plot_density_comparison(results)
     
     print("Creating energy comparison plot...")
     plot_energy_comparison(results)
@@ -597,8 +617,10 @@ if __name__ == "__main__":
     for system in system_list:
       if system == 'Hubbard_1D' or system == 'Hubbard_2D':
         variables = np.linspace(0,20,20)
+        # variables= np.array([2.0, 4.0, 6.0, 8.0])  
       elif system == 'Hchain' or system == 'Hladder':
         variables = np.linspace(0.5,5,10)
+        # variables = np.array([0.5, 1.0, 1.5, 2.0, 2.5, 3.0])
 
       print("Quantum Embedding Methods: LPFET vs DET for {}".format(system))
       print("============================================================")
@@ -636,4 +658,3 @@ if __name__ == "__main__":
       
       print("\nCalculations completed successfully!")
       print("Plots saved as PDF files in current directory.")
-
