@@ -12,21 +12,37 @@ def direct_sum(A,B):
 # Defining the switch_site functions
 def switch_sites_vector(M, new_impurity):
     M_permuted = M.copy()
-    M_permuted[0], M_permuted[new_impurity] = M_permuted[new_impurity], M_permuted[0]
+    if isinstance(new_impurity,int): 
+      M_permuted[0], M_permuted[new_impurity] = M_permuted[new_impurity], M_permuted[0]
+    if isinstance(new_impurity,list):
+      for idx, imp in enumerate(new_impurity):
+        M_permuted[idx], M_permuted[imp] = M_permuted[imp], M_permuted[idx]
     return M_permuted
 
 def switch_sites_matrix(M, new_impurity):
     M_permuted = M.copy()
-    M_permuted[:, [0, new_impurity]] = M_permuted[:, [new_impurity, 0]]
-    M_permuted[[0, new_impurity], :] = M_permuted[[new_impurity, 0], :]
-    return M_permuted 
+    if isinstance(new_impurity,int): 
+      M_permuted[:, [0, new_impurity]] = M_permuted[:, [new_impurity, 0]]
+      M_permuted[[0, new_impurity], :] = M_permuted[[new_impurity, 0], :]
+    if isinstance(new_impurity,list):
+      for idx, imp in enumerate(new_impurity):
+        M_permuted[:, [idx, imp]] = M_permuted[:, [imp, idx]]
+        M_permuted[[idx, imp], :] = M_permuted[[imp, idx], :]
+    return M_permuted
 
 def switch_sites_tensor4(M, new_impurity):
     M_permuted = M.copy()
-    M_permuted[[0, new_impurity],:,:,:] = M_permuted[[new_impurity, 0],:,:,:]
-    M_permuted[:,[0, new_impurity],:,:] = M_permuted[:,[new_impurity, 0],:,:]
-    M_permuted[:,:,[0, new_impurity],:] = M_permuted[:,:,[new_impurity, 0],:]
-    M_permuted[:,:,:,[0, new_impurity]] = M_permuted[:,:,:,[new_impurity, 0]]
+    if isinstance(new_impurity,int): 
+      M_permuted[[0, new_impurity],:,:,:] = M_permuted[[new_impurity, 0],:,:,:]
+      M_permuted[:,[0, new_impurity],:,:] = M_permuted[:,[new_impurity, 0],:,:]
+      M_permuted[:,:,[0, new_impurity],:] = M_permuted[:,:,[new_impurity, 0],:]
+      M_permuted[:,:,:,[0, new_impurity]] = M_permuted[:,:,:,[new_impurity, 0]]
+    if isinstance(new_impurity,list):
+      for idx, imp in enumerate(new_impurity):
+        M_permuted[[idx, imp],:,:,:] = M_permuted[[imp, idx],:,:,:]
+        M_permuted[:,[idx, imp],:,:] = M_permuted[:,[imp, idx],:,:]
+        M_permuted[:,:,[idx, imp],:] = M_permuted[:,:,[imp, idx],:]
+        M_permuted[:,:,:,[idx, imp]] = M_permuted[:,:,:,[imp, idx]]
     return M_permuted
 
 def householder_orbitals(RDM, N_mo_cl):
@@ -44,7 +60,10 @@ def householder_orbitals(RDM, N_mo_cl):
     --------
     array : Householder orbitals
     """
-    P, v = qnb.fermionic.tools.householder_transformation(RDM)
+    if N_mo_cl == 2:
+      P, v = qnb.fermionic.tools.householder_transformation(RDM)
+    else:
+      P, v = qnb.fermionic.tools.block_householder_transformation(RDM, N_mo_cl//2)
     RDM_ht = P @ RDM @ P
     RDM_ht_env = RDM_ht[N_mo_cl:, N_mo_cl:]
     
@@ -54,7 +73,6 @@ def householder_orbitals(RDM, N_mo_cl):
     
     # Transform back to original basis
     return P @ C_ht
-
 
 def h_matrix(n_mo, n_elec, t, v, length, width, periodic=False):
     """
